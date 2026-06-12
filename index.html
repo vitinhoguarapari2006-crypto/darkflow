@@ -304,6 +304,24 @@ textarea.input{resize:vertical;min-height:90px;line-height:1.55}
 .notice b{color:var(--text)}
 .notice a{color:var(--primary);font-weight:600;text-decoration:underline}
 
+/* guide (step-by-step) */
+.guide{display:flex;flex-direction:column;gap:9px}
+.gd{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden}
+.gd[open]{border-color:var(--border-strong)}
+.gd summary{display:flex;align-items:center;gap:10px;padding:13px 15px;font-size:14px;font-weight:600;cursor:pointer;list-style:none;user-select:none}
+.gd summary::-webkit-details-marker{display:none}
+.gd summary::after{content:"";margin-left:auto;width:9px;height:9px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .2s var(--ease)}
+.gd[open] summary::after{transform:rotate(45deg)}
+.gd summary .pdot{width:24px;height:24px;border-radius:7px}
+.gd-body{padding:2px 16px 16px}
+.gd-intro{font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:10px}
+.gd-body ol{margin:0 0 4px;padding-left:20px;display:flex;flex-direction:column;gap:9px}
+.gd-body li{font-size:13px;color:var(--text);line-height:1.6}
+.gd-body code{background:rgba(47,230,134,.12);color:var(--primary);padding:1px 6px;border-radius:5px;font-size:12px;font-family:ui-monospace,Consolas,monospace}
+.gd-warn{display:flex;gap:9px;margin-top:12px;padding:11px 13px;border-radius:10px;background:rgba(246,197,82,.08);border:1px solid rgba(246,197,82,.2);font-size:12.5px;color:#f3e0b0;line-height:1.5}
+.gd-warn svg{width:17px;height:17px;flex:none;color:var(--amber);margin-top:1px}
+.gd-warn b{color:#fff}.gd-warn code{background:rgba(246,197,82,.15);color:#f3e0b0}
+
 /* code block */
 .codeblock{background:#070a09;border:1px solid var(--border);border-radius:12px;padding:15px 16px;font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.7;color:#cfe9da;overflow-x:auto;white-space:pre;position:relative}
 .codeblock .copy{position:absolute;top:10px;right:10px}
@@ -1321,10 +1339,52 @@ function openCloudModal(){
 /* ============================================================
    CREDENTIALS
    ============================================================ */
+function guideStep(platform,colorCls,intro,steps,warn){
+  return `<details class="gd"><summary><span class="pdot ${colorCls}">${PLAT[platform].icon}</span> ${PLAT[platform].label}</summary>
+    <div class="gd-body">
+      <p class="gd-intro">${intro}</p>
+      <ol>${steps.map(s=>`<li>${s}</li>`).join('')}</ol>
+      ${warn?`<div class="gd-warn">${I.warn}<span>${warn}</span></div>`:''}
+    </div></details>`;
+}
+function guideHtml(){
+  return [
+    guideStep('instagram','ig','1 app Meta serve para todas as contas. Contas devem ser <b>Profissionais</b>, ligadas a uma <b>Página do Facebook</b>, no mesmo <b>Gerenciador de Negócios</b>.',[
+      'Em <b>developers.facebook.com</b> → Criar App → tipo <b>Empresa</b>. Adicione os produtos <b>Instagram</b> e <b>Login do Facebook</b>.',
+      'Copie <b>App ID</b> e <b>App Secret</b> (Configurações → Básico) e cole abaixo em <b>Apps de plataforma → Instagram</b>.',
+      'Abra o <b>Explorador da Graph API</b>, gere um token com login admin e conceda: <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>business_management</code>.',
+      'Rode <code>me/accounts</code> → copie o <b>token de cada página</b>. Rode <code>{ID_PAGINA}?fields=instagram_business_account</code> → copie o <b>ID do Instagram</b>.',
+      'Cadastre cada página em <b>Canais</b> e cole em <b>Tokens por canal</b>: Access token = token da página · ID da conta = instagram_business_account.'
+    ],'Exige <b>Revisão do App</b> (App Review) para <code>instagram_content_publish</code> — leva alguns dias. Limite ~50 posts por conta a cada 24h.'),
+    guideStep('facebook','fb','Usa o <b>mesmo app Meta</b> do Instagram. Não precisa criar outro.',[
+      'No mesmo app, garanta as permissões <code>pages_manage_posts</code> e <code>pages_read_engagement</code>.',
+      'No Explorador da Graph API → <code>me/accounts</code> → copie o <b>token</b> e o <b>ID</b> de cada Página.',
+      'Cadastre cada Página em <b>Canais</b> e cole em <b>Tokens por canal</b>: Access token = token da Página · ID = ID da Página.'
+    ],'Postagem de vídeo usa o endpoint <code>/{ID_PAGINA}/videos</code>.'),
+    guideStep('tiktok','tt','1 app TikTok, mas <b>cada conta faz 1 login</b> autorizando o app (OAuth).',[
+      'Em <b>developers.tiktok.com</b> → Connect an app → adicione <b>Content Posting API</b>.',
+      'Copie <b>Client Key</b> e <b>Client Secret</b> e cole em <b>Apps de plataforma → TikTok</b>. Configure os escopos <code>video.publish</code> e <code>video.upload</code>.',
+      'Para <b>cada conta</b>, faça o login do TikTok (OAuth) → você recebe <b>access_token</b> (~24h) e <b>refresh_token</b> (~1 ano).',
+      'Cadastre cada conta em <b>Canais</b> e cole access_token + refresh_token em <b>Tokens por canal</b>.'
+    ],'O app precisa passar pela <b>auditoria</b> do TikTok para postar publicamente em contas gerais. Antes disso, só rascunho/privado em contas de teste.'),
+    guideStep('youtube','yt','1 projeto Google Cloud, mas <b>cada canal autoriza</b> via login Google (OAuth).',[
+      'Em <b>console.cloud.google.com</b> → Criar projeto → ative a <b>YouTube Data API v3</b>.',
+      'Configure a tela de permissão OAuth com o escopo <code>youtube.upload</code> → crie um <b>ID do cliente OAuth</b>.',
+      'Copie <b>Client ID</b> e <b>Client Secret</b> e cole em <b>Apps de plataforma → YouTube</b>.',
+      'Para <b>cada canal</b>, faça o login OAuth com a conta Google daquele canal → guarde o <b>refresh_token</b> em <b>Tokens por canal</b>.'
+    ],'Atenção à <b>cota</b>: padrão 10.000 unidades/dia e cada upload custa ~1.600 → só ~6 uploads/dia no projeto. Para muitos canais, solicite aumento de cota ou use vários projetos.')
+  ].join('');
+}
 function renderCredentials(){
   const c=document.getElementById('content');
   c.innerHTML=`
   <div class="notice warn">${I.warn}<div><b>Dados sensíveis.</b> Tokens e chaves ficam neste dispositivo e, se a nuvem estiver ligada, sincronizam protegidos pelo seu <b>código secreto</b>. Nunca compartilhe seu código de sincronização. ${cloud.connected?'<b style="color:var(--primary)">Nuvem ativa ✓</b>':'<a id="credCloudLink">Ativar nuvem para acessar de qualquer lugar →</a>'}</div></div>
+
+  <div class="card card-pad" style="margin-bottom:18px">
+    <div class="block-title" style="margin-top:0">${I.info} Como postar em várias contas — guia passo a passo</div>
+    <p class="hint" style="margin-bottom:14px"><b>Conceito:</b> você cria <b>1 app por plataforma</b> (uma vez) e gera <b>1 token por conta</b>. Ex: 20 páginas no Instagram = 1 app + 20 tokens. No Instagram, se as contas estão no mesmo Gerenciador de Negócios, <b>1 login pega todas</b>.</p>
+    <div class="guide">${guideHtml()}</div>
+  </div>
 
   <div class="card card-pad" style="margin-bottom:18px">
     <div class="block-title" style="margin-top:0">${I.layers} Apps de plataforma (desenvolvedor)</div>
