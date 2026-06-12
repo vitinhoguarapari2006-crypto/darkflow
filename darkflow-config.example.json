@@ -1,0 +1,37 @@
+{
+  "_comment": "Renomeie para darkflow-config.json e preencha quando tiver as credenciais oficiais. NUNCA suba este arquivo para repositorios publicos.",
+  "timezone": "America/Sao_Paulo",
+  "platforms": {
+    "instagram": {
+      "enabled": false,
+      "ig_business_account_id": "",
+      "page_access_token": "",
+      "docs": "https://developers.facebook.com/docs/instagram-api/guides/content-publishing"
+    },
+    "facebook": {
+      "enabled": false,
+      "page_id": "",
+      "page_access_token": "",
+      "docs": "https://developers.facebook.com/docs/video-api"
+    },
+    "tiktok": {
+      "enabled": false,
+      "client_key": "",
+      "client_secret": "",
+      "access_token": "",
+      "refresh_token": "",
+      "docs": "https://developers.tiktok.com/doc/content-posting-api-get-started"
+    },
+    "youtube": {
+      "enabled": false,
+      "client_id": "",
+      "client_secret": "",
+      "refresh_token": "",
+      "docs": "https://developers.google.com/youtube/v3/docs/videos/insert"
+    }
+  },
+  "defaults": {
+    "privacy": "public",
+    "made_for_kids": false
+  }
+}

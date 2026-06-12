@@ -1,0 +1,14 @@
+# Credenciais reais — NUNCA versionar
+darkflow-config.json
+
+# Sistema / dependências
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# Vídeos e saídas de render
+*.mp4
+*.mov
+Originais/
+Editados/
