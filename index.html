@@ -1363,7 +1363,7 @@ function buildFFmpegScript(vids,o){
   lines.push('#  Como usar:  clique direito > Executar com PowerShell');
   lines.push('#  Requer FFmpeg no PATH (ver README / Configuracoes).');
   lines.push('# ====================================================================');
-  lines.push('$ErrorActionPreference = "Stop"');
+  lines.push('$ErrorActionPreference = "Continue"  # FFmpeg usa stderr; nao tratar como erro fatal');
   lines.push('$out = "'+o.out+'"');
   lines.push('if(!(Test-Path $out)){ New-Item -ItemType Directory -Force -Path $out | Out-Null }');
   if(tplPath)lines.push('$tpl = "'+tplPath+'"');
@@ -1558,7 +1558,7 @@ function fastEditorPS(o){
   const q=s=>"'"+String(s).replace(/'/g,"''")+"'";
   const L=[];
   L.push('Add-Type -AssemblyName System.Windows.Forms | Out-Null');
-  L.push('$ErrorActionPreference="Stop"');
+  L.push('$ErrorActionPreference="Continue"  # FFmpeg escreve no stderr; nao tratar como erro fatal');
   L.push('# --- FFmpeg automatico (baixa uma vez se nao tiver) ---');
   L.push('$ff=(Get-Command ffmpeg -ErrorAction SilentlyContinue).Source');
   L.push('if(-not $ff){');
@@ -1566,7 +1566,7 @@ function fastEditorPS(o){
   L.push('  if(-not (Test-Path $ff)){');
   L.push('    [System.Windows.Forms.MessageBox]::Show("Primeira vez: vou baixar o FFmpeg (~80MB). Clique OK e aguarde.","DarkFlow")|Out-Null');
   L.push('    New-Item -ItemType Directory -Force $ffdir|Out-Null; $zip=Join-Path $env:TEMP "ffmpeg.zip"');
-  L.push('    try{ Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zip -UseBasicParsing }catch{ [System.Windows.Forms.MessageBox]::Show("Falha ao baixar o FFmpeg. Verifique a internet.","DarkFlow")|Out-Null; exit }');
+  L.push('    try{ Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zip -UseBasicParsing -ErrorAction Stop }catch{ [System.Windows.Forms.MessageBox]::Show("Falha ao baixar o FFmpeg. Verifique a internet.","DarkFlow")|Out-Null; exit }');
   L.push('    Expand-Archive $zip -DestinationPath $ffdir -Force');
   L.push('    $exe=Get-ChildItem $ffdir -Recurse -Filter ffmpeg.exe|Select-Object -First 1; Copy-Item $exe.FullName $ff -Force');
   L.push('  }');
@@ -1589,14 +1589,17 @@ function fastEditorPS(o){
   L.push('$vids=Get-ChildItem -LiteralPath $in -File | Where-Object { $_.Extension -match "\\.(mp4|mov|webm|mkv|m4v|avi)$" }');
   L.push('$total=$vids.Count; if($total -eq 0){ [System.Windows.Forms.MessageBox]::Show("Nenhum video encontrado nessa pasta.","DarkFlow")|Out-Null; exit }');
   L.push('Write-Host ("Encoder: "+$venc[1]+"  |  "+$total+" videos") -ForegroundColor Cyan; $i=0; $ok=0');
+  L.push('$log=Join-Path $env:TEMP "darkflow_ff.log"; Remove-Item $log -ErrorAction SilentlyContinue');
   L.push('foreach($v in $vids){');
   L.push('  $i++; $dest=Join-Path $out ($v.BaseName+"_edit.mp4")');
   L.push('  Write-Host ("[$i/$total] "+$v.Name) -ForegroundColor Green');
-  L.push('  & $ff -y -i $v.FullName -i $tpl -filter_complex $filter @venc -pix_fmt yuv420p -c:a aac -b:a 128k $dest 2>$null');
-  L.push('  if(Test-Path $dest){ $ok++ }');
+  L.push('  & $ff -y -i $v.FullName -i $tpl -filter_complex $filter @venc -pix_fmt yuv420p -c:a aac -b:a 128k $dest 2>> $log');
+  L.push('  if(Test-Path $dest){ $ok++ } else { Write-Host "   (falhou - ver log)" -ForegroundColor Red }');
   L.push('}');
   L.push('try{ Start-Process $out }catch{}');
-  L.push('[System.Windows.Forms.MessageBox]::Show(("Pronto! "+$ok+" de "+$total+" videos editados em:`n"+$out),"DarkFlow")|Out-Null');
+  L.push('$msg="Pronto! "+$ok+" de "+$total+" videos editados em:`n"+$out');
+  L.push('if($ok -lt $total){ $msg=$msg+"`n`nAlguns falharam. Detalhes em: "+$log }');
+  L.push('[System.Windows.Forms.MessageBox]::Show($msg,"DarkFlow")|Out-Null');
   return L.join('\r\n');
 }
 async function buildFastEditor(opt){
