@@ -280,8 +280,18 @@ textarea.input{resize:vertical;min-height:90px;line-height:1.55}
 .tpl-opt .to-thumb svg{width:20px;height:20px;color:rgba(255,255,255,.25)}
 .tpl-opt .to-name{font-size:10.5px;font-weight:600;padding:5px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
 
+/* editor de área do vídeo (janela arrastável) */
+.area-stage{position:relative;margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid var(--border-strong);background:#0a0f0d center/cover no-repeat;touch-action:none;user-select:none}
+.area-box{position:absolute;border:2px solid var(--primary);box-shadow:0 0 0 9999px rgba(5,8,7,.55);cursor:move;background:repeating-linear-gradient(45deg,rgba(47,230,134,.1),rgba(47,230,134,.1) 7px,transparent 7px,transparent 14px)}
+.area-box .alabel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:800;color:var(--primary);letter-spacing:.05em;pointer-events:none;text-shadow:0 1px 3px #000}
+.area-h{position:absolute;width:16px;height:16px;background:var(--primary);border:2px solid #05241a;border-radius:4px}
+.area-h.tl{top:-9px;left:-9px;cursor:nwse-resize}.area-h.tr{top:-9px;right:-9px;cursor:nesw-resize}
+.area-h.bl{bottom:-9px;left:-9px;cursor:nesw-resize}.area-h.br{bottom:-9px;right:-9px;cursor:nwse-resize}
+.area-presets{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px;justify-content:center}
+
 /* preview de composição */
 .comp-prev{margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid var(--border-strong);background:#0a0f0d center/cover no-repeat;position:relative;box-shadow:var(--shadow)}
+.comp-prev .comp-tplimg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
 .comp-vid{position:absolute;left:50%;transform:translateX(-50%);background:repeating-linear-gradient(45deg,rgba(47,230,134,.14),rgba(47,230,134,.14) 8px,rgba(47,230,134,.06) 8px,rgba(47,230,134,.06) 16px);border:1px dashed rgba(47,230,134,.5);display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--primary);letter-spacing:.04em}
 .comp-cap{position:absolute;left:8%;right:8%;text-align:center;color:#fff;font-weight:800;font-size:12px;text-shadow:0 2px 4px #000,0 0 2px #000;line-height:1.2}
 
@@ -1002,7 +1012,21 @@ function fileToThumb(file,maxW){
       try{v.src=URL.createObjectURL(file)}catch(e){done('',0,0)}
     }else{
       const img=new Image();
-      img.onload=()=>{try{const r=Math.min(1,maxW/img.width);const w=Math.round(img.width*r),h=Math.round(img.height*r);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);const url=cv.toDataURL('image/jpeg',0.78);URL.revokeObjectURL(img.src);res({thumb:url,w:img.width,h:img.height,type:'image'})}catch(e){URL.revokeObjectURL(img.src);res({thumb:'',w:img.width,h:img.height,type:'image'})}};
+      img.onload=()=>{try{
+        const r=Math.min(1,maxW/img.width);const w=Math.round(img.width*r),h=Math.round(img.height*r);
+        const cv=document.createElement('canvas');cv.width=w;cv.height=h;const ctx=cv.getContext('2d');ctx.drawImage(img,0,0,w,h);
+        // detecta janela transparente (alpha) -> área automática do vídeo
+        let transparent=false,area=null;
+        const isPng=/png|webp/i.test(file.type)||/\.(png|webp)$/i.test(file.name);
+        if(isPng){try{
+          const d=ctx.getImageData(0,0,w,h).data;let minX=w,minY=h,maxX=-1,maxY=-1,tc=0;
+          for(let y=0;y<h;y++)for(let x=0;x<w;x++){if(d[(y*w+x)*4+3]<40){tc++;if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}}
+          if(tc/(w*h)>0.02&&maxX>minX){transparent=true;area={x:minX/w,y:minY/h,w:(maxX-minX+1)/w,h:(maxY-minY+1)/h};}
+        }catch(e){}}
+        // thumb: PNG preserva o furo (preview correto); senão JPEG (menor)
+        const url=cv.toDataURL(transparent?'image/png':'image/jpeg',transparent?undefined:0.78);
+        URL.revokeObjectURL(img.src);res({thumb:url,w:img.width,h:img.height,type:'image',transparent,area});
+      }catch(e){URL.revokeObjectURL(img.src);res({thumb:'',w:img.width,h:img.height,type:'image'})}};
       img.onerror=()=>res({thumb:'',w:0,h:0,type:'image'});
       try{img.src=URL.createObjectURL(file)}catch(e){res({thumb:'',w:0,h:0,type:'image'})}
     }
@@ -1018,7 +1042,8 @@ async function addTemplateFiles(files){
   for(const f of files){
     if(!/^image\//.test(f.type)&&!/^video\//.test(f.type)&&!/\.(png|jpe?g|webp|gif|mp4|mov|webm|mkv)$/i.test(f.name))continue;
     const t=await fileToThumb(f);
-    S.templates.push({id:uid(),name:f.name,type:t.type,thumb:t.thumb,w:t.w,h:t.h,format:aspectLabel(t.w,t.h),path:winPath(S.settings.templateDir,f.name),createdAt:Date.now()});
+    const area=t.area||{x:0.08,y:0.20,w:0.84,h:0.60}; // padrão: janela central deixando margem (evita cobrir tudo)
+    S.templates.push({id:uid(),name:f.name,type:t.type,thumb:t.thumb,w:t.w,h:t.h,format:aspectLabel(t.w,t.h),path:winPath(S.settings.templateDir,f.name),area,transparent:!!t.transparent,createdAt:Date.now()});
     added++;
   }
   if(added){save();updateCounts()}
@@ -1050,19 +1075,53 @@ function tplCard(t){
       <button class="btn btn-icon btn-danger tdel" data-tdel="${t.id}" title="Excluir">${I.trash}</button></div>
     <div class="tinfo"><div class="tn" title="${esc(t.name)}">${esc(t.name)}</div><div class="tm">${t.w?t.w+'×'+t.h:''}${t.format?' · '+t.format:''}</div></div></div>`;
 }
+const DEF_AREA={x:0.08,y:0.20,w:0.84,h:0.60};
+function tplArea(t){return (t&&t.area)?t.area:DEF_AREA}
+// editor visual da janela do vídeo (arrastar + redimensionar)
+function mountAreaEditor(stage,tpl){
+  let area=Object.assign({},tplArea(tpl));
+  const box=document.createElement('div');box.className='area-box';
+  box.innerHTML='<span class="alabel">VÍDEO</span><div class="area-h tl"></div><div class="area-h tr"></div><div class="area-h bl"></div><div class="area-h br"></div>';
+  stage.appendChild(box);
+  const clamp=()=>{area.w=Math.max(0.1,Math.min(1,area.w));area.h=Math.max(0.1,Math.min(1,area.h));area.x=Math.max(0,Math.min(1-area.w,area.x));area.y=Math.max(0,Math.min(1-area.h,area.y))};
+  const render=()=>{box.style.left=(area.x*100)+'%';box.style.top=(area.y*100)+'%';box.style.width=(area.w*100)+'%';box.style.height=(area.h*100)+'%'};
+  clamp();render();
+  let mode=null,start=null;
+  const onMove=e=>{if(!mode)return;const dx=(e.clientX-start.mx)/start.rw,dy=(e.clientY-start.my)/start.rh,a=start.a;
+    if(mode==='move'){area.x=a.x+dx;area.y=a.y+dy}
+    else{let x=a.x,y=a.y,w=a.w,h=a.h;
+      if(mode==='br'){w=a.w+dx;h=a.h+dy}else if(mode==='tr'){w=a.w+dx;y=a.y+dy;h=a.h-dy}
+      else if(mode==='bl'){x=a.x+dx;w=a.w-dx;h=a.h+dy}else if(mode==='tl'){x=a.x+dx;w=a.w-dx;y=a.y+dy;h=a.h-dy}
+      area.x=x;area.y=y;area.w=w;area.h=h}
+    clamp();render()};
+  const onUp=()=>{mode=null;window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp)};
+  box.addEventListener('pointerdown',e=>{const h=e.target.closest('.area-h');mode=h?h.className.split(' ')[1]:'move';const r=stage.getBoundingClientRect();start={mx:e.clientX,my:e.clientY,rw:r.width,rh:r.height,a:Object.assign({},area)};e.preventDefault();e.stopPropagation();window.addEventListener('pointermove',onMove);window.addEventListener('pointerup',onUp)});
+  return {get area(){return Object.assign({},area)},set(a){area=Object.assign({},a);clamp();render()}};
+}
 function templateModal(id){
   const t=S.templates.find(x=>x.id===id);if(!t)return;
+  const sw=190,sh=Math.round(sw*((t.w&&t.h)?t.h/t.w:16/9));
   openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
-    <h3>Template</h3><div class="sub">Confira o preview e ajuste o caminho no PC.</div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap">
-      <div style="width:160px;aspect-ratio:9/16;border-radius:12px;border:1px solid var(--border-strong);background:#0a0f0d center/cover no-repeat;${t.thumb?`background-image:url('${t.thumb}')`:''};flex:none;display:grid;place-items:center">${t.thumb?'':I.layers}</div>
-      <div style="flex:1;min-width:200px">
+    <h3>Ajustar template</h3><div class="sub">Defina onde o vídeo entra. O vídeo será cortado pra encaixar exatamente nessa janela.</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <div style="flex:none">
+        <div class="area-stage" id="areaStage" style="width:${sw}px;height:${sh}px;${t.thumb?`background-image:url('${t.thumb}')`:''}"></div>
+        <div class="area-presets">
+          <button class="btn btn-sm" data-preset="full">Tela cheia</button>
+          <button class="btn btn-sm" data-preset="center">Centro</button>
+          <button class="btn btn-sm" data-preset="bottom">Inferior</button>
+        </div>
+      </div>
+      <div style="flex:1;min-width:210px">
+        ${t.transparent?`<div class="notice info" style="margin:0 0 14px">${I.check}<div><b>Janela transparente detectada!</b> O vídeo entra exatamente no furo do PNG. Você pode ajustar abaixo se quiser.</div></div>`:`<p class="hint" style="margin-bottom:14px">Arraste a janela <b>VÍDEO</b> e redimensione pelos cantos para marcar onde o vídeo deve aparecer.</p>`}
         <div class="field"><label>Nome</label><input class="input" id="tName" value="${esc(t.name)}"></div>
-        <div class="field"><label>Caminho do arquivo no PC <span class="req">*</span></label><input class="input" id="tPath" value="${esc(t.path||'')}" placeholder="C:\\DarkFlow\\Templates\\fundo.png"><div class="hint">Usado pelo script de edição. Formato detectado: <b>${t.format||'—'}</b> (${t.w?t.w+'×'+t.h:'?'})</div></div>
+        <div class="field"><label>Caminho no PC <span class="req">*</span></label><input class="input" id="tPath" value="${esc(t.path||'')}" placeholder="C:\\DarkFlow\\Templates\\fundo.png"><div class="hint">Usado pelo script. Formato: <b>${t.format||'—'}</b> · ${t.w?t.w+'×'+t.h:'?'}</div></div>
       </div>
     </div>
     <div class="modal-foot"><button class="btn btn-danger" id="tDel" style="margin-right:auto">${I.trash} Excluir</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="tSave">${I.check} Salvar</button></div>`);
-  document.getElementById('tSave').addEventListener('click',()=>{t.name=document.getElementById('tName').value.trim()||t.name;t.path=document.getElementById('tPath').value.trim();save();closeModal();drawTemplates();toast('Template salvo')});
+  const ed=mountAreaEditor(document.getElementById('areaStage'),t);
+  document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{const p=b.dataset.preset;ed.set(p==='full'?{x:0,y:0,w:1,h:1}:p==='bottom'?{x:0.06,y:0.42,w:0.88,h:0.54}:DEF_AREA)});
+  document.getElementById('tSave').addEventListener('click',()=>{t.name=document.getElementById('tName').value.trim()||t.name;t.path=document.getElementById('tPath').value.trim();t.area=ed.area;save();closeModal();drawTemplates();toast('Template salvo')});
   document.getElementById('tDel').addEventListener('click',()=>{closeModal();confirmDel('template',()=>{S.templates=S.templates.filter(x=>x.id!==id);if(S.settings.templateId===id)S.settings.templateId='';save();drawTemplates();updateCounts();toast('Template removido')})});
 }
 
@@ -1097,6 +1156,7 @@ function renderEditor(){
         <div class="field"><label>Posição do vídeo sobre o template</label>
           <select class="select" id="tplPos"><option value="center">Centralizado</option><option value="top">Topo</option><option value="bottom">Rodapé</option></select></div>
         <div class="field"><label>Pasta de saída</label><input class="input" id="outDir" value="${esc(S.settings.outDir)}"></div>
+        <div class="chk" style="margin-bottom:10px"><input type="checkbox" id="optAutoCrop"><span class="ct">Meu vídeo já tem moldura/fundo — recortar só o conteúdo (auto)</span></div>
         <div class="chk" style="margin-bottom:14px"><input type="checkbox" id="optCaption"><span class="ct">Queimar legenda do modelo padrão no vídeo</span></div>
         <button class="btn btn-primary" id="genScript" style="width:100%">${I.download} Gerar script de edição</button>
         <p class="hint" style="margin-top:12px;text-align:center">Baixa um <b>.ps1</b> (PowerShell+FFmpeg). Veja como rodar em Configurações → Edição.</p>
@@ -1122,19 +1182,21 @@ function renderEditor(){
     const wrap=document.getElementById('compWrap');if(!wrap)return;
     const dims={'9:16':[180,320],'1:1':[260,260],'16:9':[320,180]}[fmt];
     const tpl=S.templates.find(t=>t.id===selTplId);
-    const bg=tpl&&tpl.thumb?`background-image:url('${tpl.thumb}')`:'background:linear-gradient(160deg,#13201a,#0a0f0d)';
-    // vídeo ocupa ~78% da largura, posição vertical
-    const vw=Math.round(dims[0]*0.78), vh=Math.round(vw*(fmt==='16:9'?9/16:fmt==='1:1'?1:16/9));
-    const vhc=Math.min(vh,dims[1]-12);
-    let top;if(pos==='top')top=10;else if(pos==='bottom')top=dims[1]-vhc-12;else top=(dims[1]-vhc)/2;
+    const a=tpl?tplArea(tpl):{x:0,y:0,w:1,h:1};
+    const ax=Math.round(a.x*dims[0]),ay=Math.round(a.y*dims[1]),aw=Math.round(a.w*dims[0]),ah=Math.round(a.h*dims[1]);
+    // fundo: template opaco mostra a arte; transparente mostra o vídeo atrás + arte por cima
+    const opaqueBg=tpl&&tpl.thumb&&!tpl.transparent;
+    const bg=opaqueBg?`background-image:url('${tpl.thumb}')`:'background:linear-gradient(160deg,#13201a,#0a0f0d)';
     const burn=burnEl()&&burnEl().checked;
     const capRaw=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
     const cap=capRaw?spin(capRaw).split('\n')[0].replace(/#[^\s#]+/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,'').trim().slice(0,48):'';
     wrap.innerHTML=`<div class="comp-prev" style="width:${dims[0]}px;height:${dims[1]}px;${bg}">
-        <div class="comp-vid" style="width:${vw}px;height:${vhc}px;top:${top}px;border-radius:6px">VÍDEO</div>
-        ${cap?`<div class="comp-cap" style="bottom:${Math.max(12,dims[1]*0.12)}px">${esc(cap)}</div>`:''}
+        <div class="comp-vid" style="left:${ax}px;top:${ay}px;width:${aw}px;height:${ah}px;transform:none;border-radius:4px">VÍDEO</div>
+        ${tpl&&tpl.transparent&&tpl.thumb?`<img class="comp-tplimg" src="${tpl.thumb}" alt="">`:''}
+        ${cap?`<div class="comp-cap" style="bottom:${Math.max(12,Math.round(dims[1]*0.1))}px">${esc(cap)}</div>`:''}
       </div>
-      <div class="hint" style="margin-top:8px;text-align:center">Pré-visualização do layout · ${fmt}${tpl?' · '+esc(tpl.name):' · sem template'}</div>`;
+      <div class="hint" style="margin-top:8px;text-align:center">Layout real · ${fmt}${tpl?' · '+esc(tpl.name):' · sem template'}${tpl?` · <a id="editArea" style="color:var(--primary);cursor:pointer;font-weight:600">ajustar janela</a>`:''}</div>`;
+    const ea=document.getElementById('editArea');if(ea)ea.onclick=()=>templateModal(selTplId);
   }
   function drawTplRow(){
     const row=document.getElementById('tplRow');if(!row)return;
@@ -1155,14 +1217,13 @@ function renderEditor(){
   burnEl().addEventListener('change',drawCompPreview);
   document.getElementById('genScript').addEventListener('click',()=>{
     if(!editSel.size)return toast('Selecione ao menos um vídeo','warn');
-    const tplObj=S.templates.find(t=>t.id===selTplId);
-    const tpl=tplObj?(tplObj.path||winPath(S.settings.templateDir,tplObj.name)):'';
+    const tplObj=S.templates.find(t=>t.id===selTplId)||null;
     const out=document.getElementById('outDir').value.trim()||'C:\\DarkFlow\\Editados';
-    const burn=burnEl().checked;
-    S.settings.template=tpl;S.settings.templateId=selTplId;S.settings.outDir=out;save();
+    const burn=burnEl().checked;const autoCrop=document.getElementById('optAutoCrop').checked;
+    S.settings.template=tplObj?(tplObj.path||''):'';S.settings.templateId=selTplId;S.settings.outDir=out;save();
     const vids=S.media.filter(m=>editSel.has(m.id));
     const capText=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
-    const script=buildFFmpegScript(vids,{fmt,tpl,out,pos,capText});
+    const script=buildFFmpegScript(vids,{fmt,out,pos,capText,template:tplObj,autoCrop});
     downloadFile('darkflow_editar.ps1',script);
     vids.forEach(m=>{if(m.status==='raw')m.status='edited'});save();updateCounts();
     toast(vids.length+' vídeos no script — baixado!');
@@ -1206,29 +1267,37 @@ function sanitizeDrawtext(t){
   s=s.replace(/\\/g,'\\\\').replace(/:/g,'\\:').replace(/'/g,"\\'").replace(/%/g,'\\%');
   return s;
 }
+const evenN=n=>{n=Math.round(n);return n%2?n+1:n};
 function buildFFmpegScript(vids,o){
   const dims={'9:16':[1080,1920],'1:1':[1080,1080],'16:9':[1920,1080]}[o.fmt];
   const W=dims[0],H=dims[1];
-  // posição do vídeo (foreground) sobre o template (background)
-  const yOver=o.pos==='top'?'120':(o.pos==='bottom'?'H-h-160':'(H-h)/2');
-  // posição da legenda queimada
-  const yText=o.pos==='top'?'h-220':'h-220';
+  const tpl=o.template||null;                       // objeto do template (ou null)
+  const tplPath=tpl?(tpl.path||winPath(S.settings.templateDir,tpl.name)):'';
+  const transparent=!!(tpl&&tpl.transparent);
+  // janela do vídeo (em pixels do canvas final), pares e dentro dos limites
+  const a=tpl?tplArea(tpl):{x:0,y:0,w:1,h:1};
+  let aw=evenN(a.w*W),ah=evenN(a.h*H),ax=evenN(a.x*W),ay=evenN(a.y*H);
+  aw=Math.max(2,Math.min(W,aw));ah=Math.max(2,Math.min(H,ah));
+  ax=Math.max(0,Math.min(W-aw,ax));ay=Math.max(0,Math.min(H-ah,ay));
+  const yText=H-220;
+  const fontWin="C\\:/Windows/Fonts/arialbd.ttf";
   const lines=[];
   lines.push('# ====================================================================');
   lines.push('#  DarkFlow - Edicao em lote (FFmpeg)  | gerado em '+new Date().toLocaleString('pt-BR'));
   lines.push('#  Formato: '+o.fmt+'  ('+W+'x'+H+')   |  '+vids.length+' video(s)');
+  if(tplPath)lines.push('#  Template: '+(tpl.name||'')+'  | janela do video '+aw+'x'+ah+' em ('+ax+','+ay+')'+(transparent?' (PNG transparente)':''));
+  if(o.autoCrop)lines.push('#  Auto-recorte da moldura de origem: ATIVADO (cropdetect)');
   lines.push('#  Como usar:  clique direito > Executar com PowerShell');
   lines.push('#  Requer FFmpeg no PATH (ver README / Configuracoes).');
   lines.push('# ====================================================================');
   lines.push('$ErrorActionPreference = "Stop"');
   lines.push('$out = "'+o.out+'"');
   lines.push('if(!(Test-Path $out)){ New-Item -ItemType Directory -Force -Path $out | Out-Null }');
-  if(o.tpl) lines.push('$tpl = "'+o.tpl+'"');
+  if(tplPath)lines.push('$tpl = "'+tplPath+'"');
   lines.push('$ff = "ffmpeg"   # ou caminho completo do ffmpeg.exe');
   lines.push('$total = '+vids.length+'; $i = 0');
   lines.push('');
-  // fonte para legenda (drawtext exige caminho com ":" escapado no Windows)
-  const fontWin="C\\:/Windows/Fonts/arialbd.ttf";
+  const sc = o.autoCrop ? '${srcCrop}' : '';        // texto literal interpolado pelo PowerShell
   vids.forEach((m,idx)=>{
     const src=m.path||('C:\\DarkFlow\\Originais\\'+m.title);
     const outName=(m.title||('video'+idx)).replace(/\.[^.]+$/,'')+'_edit.mp4';
@@ -1236,19 +1305,28 @@ function buildFFmpegScript(vids,o){
     let drawtext='';
     if(o.capText){const cap=sanitizeDrawtext(o.capText);
       if(cap)drawtext=`,drawtext=fontfile='${fontWin}':text='${cap}':fontcolor=white:fontsize=46:borderw=4:bordercolor=black@0.9:x=(w-text_w)/2:y=${yText}`;}
-    let fc;
-    if(o.tpl){
-      // TEMPLATE NO FUNDO: template escalado p/ tela cheia + vídeo sobreposto
-      fc=`[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];`
-        +`[0:v]scale=${W}:-2[fg];`
-        +`[bg][fg]overlay=(W-w)/2:${yOver}${drawtext?'[ov];[ov]'+drawtext.slice(1):''}`;
-      lines.push('$i++; Write-Host "[$i/$total] '+(m.title||'').replace(/"/g,'')+'" -ForegroundColor Green');
+    lines.push('$i++; Write-Host "[$i/$total] '+(m.title||'').replace(/"/g,'')+'" -ForegroundColor Green');
+    // detecção da moldura do vídeo de origem (cropdetect) -> $srcCrop = "crop=W:H:X:Y,"
+    if(o.autoCrop){
+      lines.push(`$det = & $ff -hide_banner -t 6 -i "${src}" -vf cropdetect=24:2:0 -f null - 2>&1 | Select-String "crop="`);
+      lines.push('$srcCrop = ""; if($det){ $m = [regex]::Match($det[-1].ToString(),"crop=([0-9]+:[0-9]+:[0-9]+:[0-9]+)"); if($m.Success){ $srcCrop = "crop=" + $m.Groups[1].Value + "," } }');
+    }
+    if(tplPath){
+      let fc;
+      if(transparent){
+        // PNG com furo: vídeo recortado na janela, posto em canvas preto, template (com alpha) por cima
+        fc=`[0:v]${sc}scale=${aw}:${ah}:force_original_aspect_ratio=increase,crop=${aw}:${ah},pad=${W}:${H}:${ax}:${ay}:black[v];`
+          +`[v][1:v]overlay=0:0${drawtext?'[ov];[ov]'+drawtext.slice(1):''}`;
+      }else{
+        // template opaco: arte ao fundo (tela cheia) + vídeo recortado encaixado na janela
+        fc=`[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];`
+          +`[0:v]${sc}scale=${aw}:${ah}:force_original_aspect_ratio=increase,crop=${aw}:${ah}[fg];`
+          +`[bg][fg]overlay=${ax}:${ay}${drawtext?'[ov];[ov]'+drawtext.slice(1):''}`;
+      }
       lines.push(`& $ff -y -i "${src}" -i $tpl -filter_complex "${fc}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
     }else{
-      // sem template: padroniza formato (preenche e corta)
-      const vf=`scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${drawtext}`;
-      lines.push('$i++; Write-Host "[$i/$total] '+(m.title||'').replace(/"/g,'')+'" -ForegroundColor Green');
-      lines.push(`& $ff -y -i "${src}" -vf "${vf}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
+      // sem template: padroniza formato (com auto-recorte opcional da moldura)
+      lines.push(`& $ff -y -i "${src}" -vf "${sc}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${drawtext}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
     }
     lines.push('');
   });
