@@ -1213,7 +1213,7 @@ function renderEditor(){
     document.getElementById('selNone').addEventListener('click',()=>{editSel.clear();drawEdGrid(raw)});
   }
   // estado do job
-  let fmt='9:16', fit='cover', selTplId=S.settings.templateId||'', srcMode='full', srcCrop=null;
+  let fmt='9:16', fit='cover', selTplId=S.settings.templateId||'', srcMode='full', srcCrop=null, srcCropPreview=null;
   if(selTplId&&!S.templates.some(t=>t.id===selTplId))selTplId='';
   const burnEl=()=>document.getElementById('optCaption');
   function drawCompPreview(){
@@ -1230,7 +1230,7 @@ function renderEditor(){
     const capRaw=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
     const cap=capRaw?spin(capRaw).split('\n')[0].replace(/#[^\s#]+/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,'').trim().slice(0,48):'';
     wrap.innerHTML=`<div class="comp-prev" style="width:${dims[0]}px;height:${dims[1]}px;${bg}">
-        <div class="comp-vid" style="left:${ax}px;top:${ay}px;width:${aw}px;height:${ah}px;transform:none;border-radius:4px">VÍDEO</div>
+        <div class="comp-vid" style="left:${ax}px;top:${ay}px;width:${aw}px;height:${ah}px;transform:none;border-radius:4px;${srcCropPreview?`background:url('${srcCropPreview}') center/${fit==='contain'?'contain':'cover'} no-repeat;border:1px solid rgba(47,230,134,.4)`:''}">${srcCropPreview?'':'VÍDEO'}</div>
         ${tpl&&tpl.transparent&&tth?`<img class="comp-tplimg" src="${tth}" alt="">`:''}
         ${cap?`<div class="comp-cap" style="bottom:${Math.max(12,Math.round(dims[1]*0.1))}px">${esc(cap)}</div>`:''}
       </div>
@@ -1256,14 +1256,16 @@ function renderEditor(){
   document.getElementById('fitSeg').addEventListener('click',e=>{const b=e.target.closest('[data-fit]');if(!b)return;fit=b.dataset.fit;document.querySelectorAll('#fitSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.fit===fit));drawCompPreview()});
   function setSrc(mode){srcMode=mode;document.querySelectorAll('#srcSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.src===mode));
     const info=document.getElementById('srcInfo');
-    if(mode==='full'){srcCrop=null;info.innerHTML='Usa o vídeo inteiro (encaixa na janela do template).'}
-    else if(mode==='auto'){srcCrop=null;info.innerHTML='Detecta a moldura automaticamente (<b>só no script/editor automático</b>; no navegador usa o vídeo inteiro).'}
-    else if(mode==='manual'){info.innerHTML=srcCrop?`<b style="color:var(--primary)">Área marcada ✓</b> — <a id="reMark" style="color:var(--primary);cursor:pointer">remarcar</a>`:'Abrindo o marcador…';if(!srcCrop)openSrcCropModal(a=>{srcCrop=a;setSrc('manual')});const rm=document.getElementById('reMark');if(rm)rm.onclick=()=>openSrcCropModal(a=>{srcCrop=a;setSrc('manual')})}
+    const onMarked=(a,cropped)=>{srcCrop=a;srcCropPreview=cropped||null;setSrc('manual');drawCompPreview()};
+    if(mode==='full'){srcCrop=null;srcCropPreview=null;info.innerHTML='Usa o vídeo inteiro (encaixa na janela do template).';drawCompPreview()}
+    else if(mode==='auto'){srcCrop=null;srcCropPreview=null;info.innerHTML='Detecta bordas sólidas sozinho. Para molduras desenhadas (logo/texto, como a sua), use <b>Marcar</b>. No navegador o Auto não recorta.';drawCompPreview()}
+    else if(mode==='manual'){info.innerHTML=srcCrop?`<b style="color:var(--primary)">Área marcada ✓</b> — <a id="reMark" style="color:var(--primary);cursor:pointer">remarcar</a>`:'Abrindo o marcador…';if(!srcCrop)openSrcCropModal(onMarked);const rm=document.getElementById('reMark');if(rm)rm.onclick=()=>openSrcCropModal(onMarked)}
   }
   document.getElementById('srcSeg').addEventListener('click',e=>{const b=e.target.closest('[data-src]');if(!b)return;setSrc(b.dataset.src)});
   burnEl().addEventListener('change',drawCompPreview);
   document.getElementById('editNow').addEventListener('click',()=>{
     if(!editSel.size)return toast('Selecione ao menos um vídeo','warn');
+    if(srcMode==='auto'){toast('No navegador o "Auto" não recorta — marque a filmagem.','warn');setSrc('manual');return}
     editNowFlow({fmt,fit,selTplId,burn:burnEl().checked,srcCrop:srcMode==='manual'?srcCrop:null});
   });
   document.getElementById('genScript').addEventListener('click',()=>{
@@ -1540,7 +1542,18 @@ async function openSrcCropModal(onSave){
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="srcSave">${I.check} Usar esta área</button></div>`);
   const ed=mountAreaEditor(document.getElementById('srcStage'),{area:{x:0.06,y:0.42,w:0.88,h:0.5}});
   document.querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{const p=b.dataset.sp;ed.set(p==='full'?{x:0,y:0,w:1,h:1}:p==='center'?{x:0.1,y:0.25,w:0.8,h:0.5}:{x:0.05,y:0.45,w:0.9,h:0.5})});
-  document.getElementById('srcSave').addEventListener('click',()=>{const a=ed.area;closeModal();onSave&&onSave(a)});
+  document.getElementById('srcSave').addEventListener('click',async()=>{
+    const a=ed.area;
+    // gera prévia recortada (a filmagem real) para mostrar no preview do editor
+    let cropped='';
+    try{const img=new Image();await new Promise(r=>{img.onload=r;img.onerror=r;img.src=fr.url});
+      const cw=Math.max(1,Math.round(a.w*img.width)),ch=Math.max(1,Math.round(a.h*img.height));
+      const cvv=document.createElement('canvas');cvv.width=cw;cvv.height=ch;
+      cvv.getContext('2d').drawImage(img,Math.round(a.x*img.width),Math.round(a.y*img.height),cw,ch,0,0,cw,ch);
+      cropped=cvv.toDataURL('image/jpeg',0.82);
+    }catch(e){}
+    closeModal();onSave&&onSave(a,cropped);
+  });
 }
 async function editNowFlow(opt){
   const box=document.getElementById('renderBox');const setMsg=h=>{if(box)box.innerHTML=h};
