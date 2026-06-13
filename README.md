@@ -31,7 +31,7 @@ Canais → Biblioteca → Edição em lote → Legendas → Agendamento → Dash
 | Módulo | O que faz |
 |--------|-----------|
 | **Canais** | Cadastre cada perfil que você gerencia (plataforma, @, nicho, RPM). |
-| **Biblioteca** | Registre seus vídeos. Ciclo: `bruto → editado → com legenda → agendado → publicado`. Importação em massa por lista. |
+| **Biblioteca** | **Aponte uma pasta do PC** e o sistema puxa todos os vídeos automaticamente (nome, duração e caminho). Ciclo: `bruto → editado → com legenda → agendado → publicado`. Botão **Re-escanear** puxa vídeos novos depois. |
 | **Edição em lote** | Selecione vídeos + template de fundo + formato → **gera um script FFmpeg** que edita tudo de uma vez no seu PC. |
 | **Legendas** | Modelos reutilizáveis com **spintax** `{opção1\|opção2}` para variações automáticas (evita conteúdo duplicado). |
 | **Agendamento** | Calendário + **fila automática**: escolha quantos posts/dia, em quais horários e por quantos dias. |
