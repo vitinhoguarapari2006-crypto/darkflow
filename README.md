@@ -33,7 +33,8 @@ Canais → Biblioteca → Edição em lote → Legendas → Agendamento → Dash
 | **Canais** | Cadastre cada perfil que você gerencia (plataforma, @, nicho, RPM). |
 | **Biblioteca** | **Aponte uma pasta do PC** e o sistema puxa todos os vídeos automaticamente (nome, duração e caminho). Ciclo: `bruto → editado → com legenda → agendado → publicado`. Botão **Re-escanear** puxa vídeos novos depois. |
 | **Templates** | Suba as artes de fundo. PNG com área transparente = janela do vídeo **detectada automaticamente**; senão, arraste a janela. Arquivos ficam no IndexedDB (não somem ao recarregar). |
-| **Edição em lote** | **Edita dentro do próprio sistema** (FFmpeg WebAssembly — sem instalar nada): escolhe template, formato e encaixe (preencher/conter), clica em **Editar agora** e assiste o resultado. Opção avançada gera script PowerShell para lotes grandes. |
+| **Edição em lote** | **Edita no próprio sistema** (FFmpeg WASM, sem instalar nada) ou **modo nativo rápido**. **Recorte da origem**: se o vídeo já vem com moldura/marca, marque a filmagem real e o sistema recorta só ela e encaixa no template novo na proporção certa. Encaixe preencher/conter. Resultados aparecem na tela. |
+| **Editor automático** | Script nativo que você roda **uma vez** (e pode pôr no inicializar do Windows): vigia a pasta `C:\DarkFlow\Entrada` e edita **sozinho** todo vídeo que cair lá — rápido, sem abrir nada. Template embutido no script. |
 | **Legendas** | Modelos reutilizáveis com **spintax** `{opção1\|opção2}` para variações automáticas (evita conteúdo duplicado). |
 | **Agendamento** | Calendário + **fila automática**: escolha quantos posts/dia, em quais horários e por quantos dias. |
 | **Dashboard** | Views, ganhos estimados (modelo RPM), status das postagens e desempenho somando todos os canais. |

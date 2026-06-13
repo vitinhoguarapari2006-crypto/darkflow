@@ -878,7 +878,7 @@ function importMediaModal(){
 const VIDEO_RE=/\.(mp4|mov|mkv|avi|webm|m4v|flv|wmv|mpg|mpeg|3gp)$/i;
 const isVideo=n=>VIDEO_RE.test(n);
 const fmtDur=s=>{s=Math.round(s);const m=Math.floor(s/60),ss=s%60;return m+':'+String(ss).padStart(2,'0')};
-function winPath(base,rel){if(!base)return rel.replace(/\//g,'\\');return base.replace(/[\\\/]+$/,'')+'\\'+rel.replace(/\//g,'\\')}
+function winPath(base,rel){rel=rel||'';if(!base)return rel.replace(/\//g,'\\');return base.replace(/[\\\/]+$/,'')+'\\'+rel.replace(/\//g,'\\')}
 function getDuration(file){return new Promise(res=>{let done=false;const v=document.createElement('video');v.preload='metadata';const t=setTimeout(()=>{if(!done){done=true;try{URL.revokeObjectURL(v.src)}catch(e){}res('')}},4000);v.onloadedmetadata=()=>{if(done)return;done=true;clearTimeout(t);const d=v.duration;try{URL.revokeObjectURL(v.src)}catch(e){}res(isFinite(d)&&d>0?fmtDur(d):'')};v.onerror=()=>{if(done)return;done=true;clearTimeout(t);try{URL.revokeObjectURL(v.src)}catch(e){}res('')};try{v.src=URL.createObjectURL(file)}catch(e){clearTimeout(t);res('')}})}
 // IndexedDB genérico — store 'h' (handle de pasta) e 'tpl' (templates: thumb+blob)
 function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open('darkflow_fs',2);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('h'))db.createObjectStore('h');if(!db.objectStoreNames.contains('tpl'))db.createObjectStore('tpl')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
@@ -1039,6 +1039,15 @@ function fileToThumb(file,maxW){
     }
   });
 }
+// extrai um quadro (frame) real do vídeo para marcar o recorte
+function videoFrame(file){return new Promise(res=>{
+  const v=document.createElement('video');v.preload='metadata';v.muted=true;v.playsInline=true;
+  let done=false;const finish=r=>{if(done)return;done=true;try{URL.revokeObjectURL(v.src)}catch(e){}res(r)};
+  v.onloadeddata=()=>{try{v.currentTime=Math.min(0.6,(v.duration||1)/3)}catch(e){grab()}};
+  const grab=()=>{try{const cv=document.createElement('canvas');const r=Math.min(1,480/(v.videoWidth||480));cv.width=Math.round((v.videoWidth||480)*r);cv.height=Math.round((v.videoHeight||854)*r);cv.getContext('2d').drawImage(v,0,0,cv.width,cv.height);finish({url:cv.toDataURL('image/jpeg',0.82),w:v.videoWidth,h:v.videoHeight})}catch(e){finish(null)}};
+  v.onseeked=grab;v.onerror=()=>finish(null);setTimeout(()=>finish(null),6000);
+  try{v.src=URL.createObjectURL(file)}catch(e){finish(null)}
+})}
 function pickTemplateFiles(cb){
   const inp=document.createElement('input');inp.type='file';inp.accept='image/*,video/mp4,video/quicktime,video/webm';inp.multiple=true;
   inp.onchange=()=>cb([...inp.files]);inp.click();
@@ -1173,13 +1182,21 @@ function renderEditor(){
             <button type="button" class="seg-opt" data-fit="contain"><b>Conter</b>vídeo inteiro</button>
           </div><div class="hint">Preencher = ocupa toda a janela (corta sobras). Conter = vídeo inteiro com fundo nas bordas.</div></div>
         <div class="field"><label>Pasta de saída</label><input class="input" id="outDir" value="${esc(S.settings.outDir)}"></div>
-        <div class="chk" style="margin-bottom:10px"><input type="checkbox" id="optAutoCrop"><span class="ct">Meu vídeo já tem moldura/fundo — recortar só o conteúdo (auto)</span></div>
+        <div class="field"><label>Recorte do vídeo de origem</label>
+          <div class="seg" id="srcSeg">
+            <button type="button" class="seg-opt sel" data-src="full"><b>Inteiro</b>sem recorte</button>
+            <button type="button" class="seg-opt" data-src="manual"><b>Marcar</b>área do vídeo</button>
+            <button type="button" class="seg-opt" data-src="auto"><b>Auto</b>detectar</button>
+          </div>
+          <div class="hint" id="srcInfo">Use <b>Marcar</b> se o vídeo já vem com moldura/marca — você seleciona só a filmagem real.</div></div>
         <div class="chk" style="margin-bottom:14px"><input type="checkbox" id="optCaption"><span class="ct">Queimar legenda do modelo padrão no vídeo</span></div>
         <button class="btn btn-primary" id="editNow" style="width:100%">${I.bolt} Editar agora no sistema</button>
         <div id="renderBox" style="margin-top:12px"></div>
-        <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600">Opção avançada: script PowerShell (lotes grandes)</summary>
-          <button class="btn btn-sm" id="genScript" style="width:100%;margin-top:10px">${I.download} Gerar script .ps1</button>
-          <p class="hint" style="margin-top:8px">Para dezenas de vídeos de uma vez, o script roda mais rápido no seu PC (requer FFmpeg instalado).</p>
+        <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600">Modo nativo (rápido) — script & automático</summary>
+          <button class="btn btn-sm btn-primary" id="autoEditorBtn" style="width:100%;margin-top:10px">${I.refresh} Editor automático (vigia pasta)</button>
+          <p class="hint" style="margin-top:6px">Roda <b>uma vez</b> e fica vigiando: todo vídeo que você jogar na pasta <b>C:\\DarkFlow\\Entrada</b> é editado nativo (rápido) <b>automaticamente</b>, sem abrir mais nada.</p>
+          <button class="btn btn-sm" id="genScript" style="width:100%;margin-top:10px">${I.download} Gerar script único (.ps1)</button>
+          <p class="hint" style="margin-top:6px">Edita os vídeos selecionados de uma vez no PC (requer FFmpeg).</p>
         </details>
       </div>
     </div>
@@ -1196,7 +1213,7 @@ function renderEditor(){
     document.getElementById('selNone').addEventListener('click',()=>{editSel.clear();drawEdGrid(raw)});
   }
   // estado do job
-  let fmt='9:16', fit='cover', selTplId=S.settings.templateId||'';
+  let fmt='9:16', fit='cover', selTplId=S.settings.templateId||'', srcMode='full', srcCrop=null;
   if(selTplId&&!S.templates.some(t=>t.id===selTplId))selTplId='';
   const burnEl=()=>document.getElementById('optCaption');
   function drawCompPreview(){
@@ -1237,23 +1254,36 @@ function renderEditor(){
   document.getElementById('tplManage').addEventListener('click',()=>go('templates'));
   document.getElementById('fmtSeg').addEventListener('click',e=>{const b=e.target.closest('[data-f]');if(!b)return;fmt=b.dataset.f;document.querySelectorAll('#fmtSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.f===fmt));drawCompPreview()});
   document.getElementById('fitSeg').addEventListener('click',e=>{const b=e.target.closest('[data-fit]');if(!b)return;fit=b.dataset.fit;document.querySelectorAll('#fitSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.fit===fit));drawCompPreview()});
+  function setSrc(mode){srcMode=mode;document.querySelectorAll('#srcSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.src===mode));
+    const info=document.getElementById('srcInfo');
+    if(mode==='full'){srcCrop=null;info.innerHTML='Usa o vídeo inteiro (encaixa na janela do template).'}
+    else if(mode==='auto'){srcCrop=null;info.innerHTML='Detecta a moldura automaticamente (<b>só no script/editor automático</b>; no navegador usa o vídeo inteiro).'}
+    else if(mode==='manual'){info.innerHTML=srcCrop?`<b style="color:var(--primary)">Área marcada ✓</b> — <a id="reMark" style="color:var(--primary);cursor:pointer">remarcar</a>`:'Abrindo o marcador…';if(!srcCrop)openSrcCropModal(a=>{srcCrop=a;setSrc('manual')});const rm=document.getElementById('reMark');if(rm)rm.onclick=()=>openSrcCropModal(a=>{srcCrop=a;setSrc('manual')})}
+  }
+  document.getElementById('srcSeg').addEventListener('click',e=>{const b=e.target.closest('[data-src]');if(!b)return;setSrc(b.dataset.src)});
   burnEl().addEventListener('change',drawCompPreview);
   document.getElementById('editNow').addEventListener('click',()=>{
     if(!editSel.size)return toast('Selecione ao menos um vídeo','warn');
-    editNowFlow({fmt,fit,selTplId,burn:burnEl().checked});
+    editNowFlow({fmt,fit,selTplId,burn:burnEl().checked,srcCrop:srcMode==='manual'?srcCrop:null});
   });
   document.getElementById('genScript').addEventListener('click',()=>{
     if(!editSel.size)return toast('Selecione ao menos um vídeo','warn');
     const tplObj=S.templates.find(t=>t.id===selTplId)||null;
     const out=document.getElementById('outDir').value.trim()||'C:\\DarkFlow\\Editados';
-    const burn=burnEl().checked;const autoCrop=document.getElementById('optAutoCrop').checked;
+    const burn=burnEl().checked;
     S.settings.template=tplObj?(tplObj.path||''):'';S.settings.templateId=selTplId;S.settings.outDir=out;save();
     const vids=S.media.filter(m=>editSel.has(m.id));
     const capText=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
-    const script=buildFFmpegScript(vids,{fmt,out,fit,capText,template:tplObj,autoCrop});
+    const script=buildFFmpegScript(vids,{fmt,out,fit,capText,template:tplObj,autoCrop:srcMode==='auto',srcCrop:srcMode==='manual'?srcCrop:null});
     downloadFile('darkflow_editar.ps1',script);
     vids.forEach(m=>{if(m.status==='raw')m.status='edited'});save();updateCounts();
     toast(vids.length+' vídeos no script — baixado!');
+  });
+  document.getElementById('autoEditorBtn')?.addEventListener('click',()=>{
+    const tplObj=S.templates.find(t=>t.id===selTplId)||null;
+    const out=document.getElementById('outDir').value.trim()||'C:\\DarkFlow\\Editados';
+    const capText=burnEl().checked?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
+    buildAutoEditor({fmt,fit,template:tplObj,out,capText,srcCrop:srcMode==='manual'?srcCrop:null,autoCrop:srcMode==='auto'});
   });
   document.getElementById('checkResult').addEventListener('click',checkEditedResult);
 }
@@ -1330,7 +1360,8 @@ function buildFFmpegScript(vids,o){
   lines.push('$ff = "ffmpeg"   # ou caminho completo do ffmpeg.exe');
   lines.push('$total = '+vids.length+'; $i = 0');
   lines.push('');
-  const sc = o.autoCrop ? '${srcCrop}' : '';        // texto literal interpolado pelo PowerShell
+  // recorte da origem: manual (expressão fixa) tem prioridade; senão auto (cropdetect via $srcCrop)
+  const sc = o.srcCrop ? srcCropPrefix(o.srcCrop) : (o.autoCrop ? '${srcCrop}' : '');
   vids.forEach((m,idx)=>{
     const src=m.path||('C:\\DarkFlow\\Originais\\'+m.title);
     const outName=(m.title||('video'+idx)).replace(/\.[^.]+$/,'')+'_edit.mp4';
@@ -1340,7 +1371,7 @@ function buildFFmpegScript(vids,o){
       if(cap)drawtext=`,drawtext=fontfile='${fontWin}':text='${cap}':fontcolor=white:fontsize=46:borderw=4:bordercolor=black@0.9:x=(w-text_w)/2:y=${yText}`;}
     lines.push('$i++; Write-Host "[$i/$total] '+(m.title||'').replace(/"/g,'')+'" -ForegroundColor Green');
     // detecção da moldura do vídeo de origem (cropdetect) -> $srcCrop = "crop=W:H:X:Y,"
-    if(o.autoCrop){
+    if(o.autoCrop&&!o.srcCrop){
       lines.push(`$det = & $ff -hide_banner -t 6 -i "${src}" -vf cropdetect=24:2:0 -f null - 2>&1 | Select-String "crop="`);
       lines.push('$srcCrop = ""; if($det){ $m = [regex]::Match($det[-1].ToString(),"crop=([0-9]+:[0-9]+:[0-9]+:[0-9]+)"); if($m.Success){ $srcCrop = "crop=" + $m.Groups[1].Value + "," } }');
     }
@@ -1392,17 +1423,19 @@ async function getFFmpeg(){
   return _ffLoading;
 }
 async function getFont(){if(_font!==null)return _font;try{_font=await window.FFmpegUtil.fetchFile('https://cdn.jsdelivr.net/gh/ffmpegwasm/testdata@master/arial.ttf')}catch(e){_font=false}return _font}
+// recorte da origem (fração 0-1) como prefixo de filtro, ex.: crop=iw*0.8:ih*0.5:iw*0.1:ih*0.4,
+function srcCropPrefix(c){if(!c)return '';const f=n=>(+n).toFixed(4);return `crop=iw*${f(c.w)}:ih*${f(c.h)}:iw*${f(c.x)}:ih*${f(c.y)},`}
 // filtro para o wasm (numérico, sem variáveis de PowerShell)
-function wasmFilter(W,H,tpl,fit,cap){
-  let dt='';
+function wasmFilter(W,H,tpl,fit,cap,srcCrop){
+  let dt='';const sp=srcCropPrefix(srcCrop);
   if(cap)dt=`,drawtext=fontfile=arial.ttf:text='${cap}':fontcolor=white:fontsize=46:borderw=4:bordercolor=black@0.9:x=(w-text_w)/2:y=${H-220}`;
   if(tpl){
     const a=tplArea(tpl);let aw=evenN(a.w*W),ah=evenN(a.h*H),ax=evenN(a.x*W),ay=evenN(a.y*H);
     aw=Math.max(2,Math.min(W,aw));ah=Math.max(2,Math.min(H,ah));ax=Math.max(0,Math.min(W-aw,ax));ay=Math.max(0,Math.min(H-ah,ay));
-    if(tpl.transparent)return `[0:v]${fitFilter(aw,ah,fit)},pad=${W}:${H}:${ax}:${ay}:black[v];[v][1:v]overlay=0:0${dt?'[ov];[ov]'+dt.slice(1):''}`;
-    return `[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];[0:v]${fitFilter(aw,ah,fit)}[fg];[bg][fg]overlay=${ax}:${ay}${dt?'[ov];[ov]'+dt.slice(1):''}`;
+    if(tpl.transparent)return `[0:v]${sp}${fitFilter(aw,ah,fit)},pad=${W}:${H}:${ax}:${ay}:black[v];[v][1:v]overlay=0:0${dt?'[ov];[ov]'+dt.slice(1):''}`;
+    return `[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];[0:v]${sp}${fitFilter(aw,ah,fit)}[fg];[bg][fg]overlay=${ax}:${ay}${dt?'[ov];[ov]'+dt.slice(1):''}`;
   }
-  return `[0:v]${fitFilter(W,H,fit)}${dt}`;
+  return `[0:v]${sp}${fitFilter(W,H,fit)}${dt}`;
 }
 // localiza os arquivos reais dos vídeos selecionados (pasta conectada ou seleção manual)
 async function resolveVideoFiles(vids){
@@ -1427,6 +1460,88 @@ async function saveResultsToFolder(results){
   try{const dir=await window.showDirectoryPicker({mode:'readwrite'});for(const r of results){const fh=await dir.getFileHandle(r.name,{create:true});const w=await fh.createWritable();await w.write(r.blob);await w.close()}toast(results.length+' vídeos salvos na pasta ✦')}
   catch(e){if(e&&e.name!=='AbortError')toast('Não foi possível salvar','err')}
 }
+// ===== Editor automático (vigia de pasta) — script nativo que roda sozinho =====
+function autoEditorPS(o){
+  const q=s=>"'"+String(s).replace(/'/g,"''")+"'";  // string single-quoted do PowerShell
+  const L=[];
+  L.push('# ============================================================');
+  L.push('#  DarkFlow - Editor AUTOMATICO (vigia de pasta)  ['+o.fmt+']');
+  L.push('#  Rode UMA vez: clique direito > Executar com PowerShell.');
+  L.push('#  Deixe a janela aberta (ou adicione ao inicializar do Windows).');
+  L.push('#  Tudo que cair em '+o.inDir+' vira video editado em '+o.out+' automaticamente.');
+  L.push('#  Requer FFmpeg no PATH (winget install Gyan.FFmpeg).');
+  L.push('# ============================================================');
+  L.push('$ErrorActionPreference="SilentlyContinue"');
+  L.push('$ff="ffmpeg"');
+  L.push('$in='+q(o.inDir)+'; $out='+q(o.out));
+  L.push('New-Item -ItemType Directory -Force -Path $in,$out | Out-Null');
+  L.push('# --- template embutido (base64) ---');
+  L.push('$tplB64=@"');
+  L.push(o.b64);
+  L.push('"@');
+  L.push('$tpl=Join-Path $env:TEMP "darkflow_tpl.png"');
+  L.push('[IO.File]::WriteAllBytes($tpl,[Convert]::FromBase64String($tplB64))');
+  L.push('$filter='+q(o.filter));
+  L.push('function Edit-Video($f){');
+  L.push('  $name=[IO.Path]::GetFileNameWithoutExtension($f)+"_edit.mp4"');
+  L.push('  $dest=Join-Path $out $name');
+  L.push('  if(Test-Path $dest){return}');
+  L.push('  Start-Sleep -Seconds 1');
+  L.push('  Write-Host ("Editando: "+[IO.Path]::GetFileName($f)) -ForegroundColor Green');
+  L.push('  & $ff -y -i $f -i $tpl -filter_complex $filter -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k $dest');
+  L.push('  if(Test-Path $dest){ Write-Host ("  -> pronto: "+$name) -ForegroundColor Cyan }');
+  L.push('}');
+  L.push('Write-Host "DarkFlow vigiando $in  (deixe esta janela aberta)" -ForegroundColor Yellow');
+  L.push('while($true){');
+  L.push('  Get-ChildItem -LiteralPath $in -File | Where-Object { $_.Extension -match "\\.(mp4|mov|webm|mkv|m4v|avi)$" } | ForEach-Object { Edit-Video $_.FullName }');
+  L.push('  Start-Sleep -Seconds 5');
+  L.push('}');
+  return L.join('\r\n');
+}
+async function buildAutoEditor(opt){
+  if(!opt.template){toast('Escolha um template primeiro','warn');return}
+  toast('Gerando editor automático…');
+  const rec=await idbGetV('tpl',opt.template.id);
+  if(!rec||!rec.blob){toast('Arquivo do template não encontrado — re-suba o template','err');return}
+  const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=()=>res('');r.readAsDataURL(rec.blob)});
+  if(!b64){toast('Falha ao ler o template','err');return}
+  const [W,H]=DIMS[opt.fmt];
+  const cap=opt.capText?sanitizeDrawtext(opt.capText):'';
+  const filter=wasmFilter(W,H,opt.template,opt.fit,cap,opt.srcCrop||null); // mesmo filtro; FFmpeg nativo aceita
+  const script=autoEditorPS({b64,filter,out:opt.out||'C:\\DarkFlow\\Editados',inDir:'C:\\DarkFlow\\Entrada',fmt:opt.fmt});
+  downloadFile('darkflow-auto.ps1',script);
+  openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
+    <h3>${I.refresh} Editor automático pronto</h3><div class="sub">Configure uma vez e nunca mais abra nada.</div>
+    <ol style="font-size:13.5px;color:var(--text);line-height:1.9;padding-left:20px">
+      <li>Salvou <b>darkflow-auto.ps1</b>. Clique com o direito → <b>Executar com PowerShell</b>.</li>
+      <li>Vai criar a pasta <b>C:\\DarkFlow\\Entrada</b> e ficar vigiando.</li>
+      <li><b>Jogue seus vídeos</b> nessa pasta → eles são editados sozinhos em <b>C:\\DarkFlow\\Editados</b>.</li>
+      <li>Deixe a janela aberta. Pra ligar junto com o Windows: aperte <b>Win+R</b>, digite <code style="color:var(--primary)">shell:startup</code> e coloque um atalho do script lá.</li>
+    </ol>
+    <div class="notice info" style="margin:8px 0 0">${I.info}<div>Se o Windows bloquear, rode uma vez: <code style="color:var(--primary)">Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>. O template já está embutido no script.</div></div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Entendi</button></div>`);
+}
+// marca o recorte da filmagem real sobre um quadro do vídeo de origem
+async function openSrcCropModal(onSave){
+  const vids=S.media.filter(m=>editSel.has(m.id));
+  if(!vids.length){toast('Selecione os vídeos primeiro','warn');return}
+  toast('Carregando um quadro do vídeo…');
+  let files=await resolveVideoFiles([vids[0]]);
+  let file=files[vids[0].id];
+  if(!file){const picked=await pickVideoFilesManual();file=picked.find(f=>f.name===vids[0].title)||picked[0]}
+  if(!file){toast('Não encontrei o arquivo do vídeo. Conecte a pasta na Biblioteca.','err');return}
+  const fr=await videoFrame(file);
+  if(!fr||!fr.url){toast('Não consegui ler um quadro do vídeo','err');return}
+  const sw=250,sh=Math.round(sw*((fr.w&&fr.h)?fr.h/fr.w:16/9));
+  openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
+    <h3>Marcar a filmagem real</h3><div class="sub">Arraste a janela sobre <b>apenas o vídeo</b> (sem a moldura/marca antiga). Ele será recortado e encaixado no template novo.</div>
+    <div style="display:flex;justify-content:center"><div class="area-stage" id="srcStage" style="width:${sw}px;height:${sh}px;background-image:url('${fr.url}')"></div></div>
+    <div class="area-presets"><button class="btn btn-sm" data-sp="lower"><b>Parte de baixo</b></button><button class="btn btn-sm" data-sp="center">Centro</button><button class="btn btn-sm" data-sp="full">Tudo</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="srcSave">${I.check} Usar esta área</button></div>`);
+  const ed=mountAreaEditor(document.getElementById('srcStage'),{area:{x:0.06,y:0.42,w:0.88,h:0.5}});
+  document.querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{const p=b.dataset.sp;ed.set(p==='full'?{x:0,y:0,w:1,h:1}:p==='center'?{x:0.1,y:0.25,w:0.8,h:0.5}:{x:0.05,y:0.45,w:0.9,h:0.5})});
+  document.getElementById('srcSave').addEventListener('click',()=>{const a=ed.area;closeModal();onSave&&onSave(a)});
+}
 async function editNowFlow(opt){
   const box=document.getElementById('renderBox');const setMsg=h=>{if(box)box.innerHTML=h};
   const vids=S.media.filter(m=>editSel.has(m.id));
@@ -1447,7 +1562,7 @@ async function editNowFlow(opt){
   catch(e){console.warn(e);setMsg(`<div class="notice warn" style="margin:0">${I.warn}<div>Não consegui carregar o motor de edição (verifique a internet). Você pode usar a opção de script PowerShell.</div></div>`);return}
   let cap=opt.burn?sanitizeDrawtext(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
   const fontBytes=cap?await getFont():false;if(!fontBytes)cap='';
-  const [W,H]=DIMS[opt.fmt];const filter=wasmFilter(W,H,tpl,opt.fit,cap);
+  const [W,H]=DIMS[opt.fmt];const filter=wasmFilter(W,H,tpl,opt.fit,cap,opt.srcCrop||null);
   const fetchFile=window.FFmpegUtil.fetchFile;
   const resultGrid=document.getElementById('resultGrid');if(resultGrid)resultGrid.innerHTML='';
   const results=[];
@@ -1988,7 +2103,7 @@ updateCounts();
 (function bootCloud(){const cfg=loadCloudCfg();if(cfg&&cfg.code){cloudConnect(cfg,{silent:true})}})();
 document.getElementById('syncPill').addEventListener('click',openCloudModal);
 go('dashboard');
-window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg}};
+window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg,srcCropPrefix,autoEditorPS,buildFFmpegScript}};
 })();
 </script>
 </body>
