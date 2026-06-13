@@ -252,6 +252,45 @@ textarea.input{resize:vertical;min-height:90px;line-height:1.55}
 .minfo .mt{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .minfo .mm{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap}
 
+/* ============ TEMPLATES ============ */
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:15px}
+.tcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all .18s var(--ease);position:relative}
+.tcard:hover{border-color:var(--border-strong);transform:translateY(-2px)}
+.tcard.sel{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+.tthumb{aspect-ratio:9/16;background:#0a0f0d center/cover no-repeat;display:grid;place-items:center;position:relative}
+.tthumb.empty-thumb svg{width:34px;height:34px;color:rgba(255,255,255,.2)}
+.tthumb .tbadge{position:absolute;top:7px;left:7px;background:rgba(0,0,0,.6);font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.03em}
+.tthumb .tpick{position:absolute;top:7px;right:7px;width:22px;height:22px;border-radius:7px;background:var(--primary);display:none;place-items:center}
+.tcard.sel .tthumb .tpick{display:grid}.tcard.sel .tpick svg{width:13px;height:13px;color:#05241a}
+.tinfo{padding:10px 11px}
+.tinfo .tn{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tinfo .tm{font-size:11.5px;color:var(--muted-2);margin-top:3px;display:flex;align-items:center;gap:6px}
+.tcard .tdel{position:absolute;bottom:8px;right:8px;width:30px;height:30px;padding:6px;background:rgba(0,0,0,.55);opacity:0;transition:opacity .15s}
+.tcard:hover .tdel{opacity:.85}
+
+/* hover preview flutuante */
+.hoverprev{position:fixed;z-index:300;width:200px;aspect-ratio:9/16;border-radius:12px;border:1px solid var(--border-strong);box-shadow:0 18px 50px -10px rgba(0,0,0,.8);background:#0a0f0d center/cover no-repeat;pointer-events:none;display:none;transition:opacity .12s}
+
+/* seletor de template no editor (linha horizontal) */
+.tpl-pick-row{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:thin}
+.tpl-opt{flex:none;width:74px;cursor:pointer;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface);transition:all .15s var(--ease)}
+.tpl-opt:hover{border-color:var(--border-strong)}
+.tpl-opt.sel{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+.tpl-opt .to-thumb{aspect-ratio:9/16;background:#0a0f0d center/cover no-repeat;display:grid;place-items:center}
+.tpl-opt .to-thumb svg{width:20px;height:20px;color:rgba(255,255,255,.25)}
+.tpl-opt .to-name{font-size:10.5px;font-weight:600;padding:5px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+
+/* preview de composição */
+.comp-prev{margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid var(--border-strong);background:#0a0f0d center/cover no-repeat;position:relative;box-shadow:var(--shadow)}
+.comp-vid{position:absolute;left:50%;transform:translateX(-50%);background:repeating-linear-gradient(45deg,rgba(47,230,134,.14),rgba(47,230,134,.14) 8px,rgba(47,230,134,.06) 8px,rgba(47,230,134,.06) 16px);border:1px dashed rgba(47,230,134,.5);display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--primary);letter-spacing:.04em}
+.comp-cap{position:absolute;left:8%;right:8%;text-align:center;color:#fff;font-weight:800;font-size:12px;text-shadow:0 2px 4px #000,0 0 2px #000;line-height:1.2}
+
+/* players de resultado */
+.res-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
+.res-card{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#0a0f0d}
+.res-card video{width:100%;aspect-ratio:9/16;object-fit:contain;background:#000;display:block}
+.res-card .rn{font-size:12px;font-weight:600;padding:9px 11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 /* ============ STEPS ============ */
 .steps{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap}
 .step{flex:1;min-width:130px;display:flex;align-items:center;gap:11px;padding:13px 15px;border-radius:13px;border:1px solid var(--border);background:var(--surface);transition:all .2s var(--ease)}
@@ -391,6 +430,10 @@ input[type=range]{width:100%;accent-color:var(--primary);height:6px}
       </button>
 
       <div class="nav-label">Produção</div>
+      <button class="nav-item" data-route="templates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+        Templates <span class="count" data-count="templates">0</span>
+      </button>
       <button class="nav-item" data-route="editor">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         Edição em lote
@@ -484,7 +527,7 @@ function platChip(p,sm){const x=PLAT[p]||PLAT.instagram;return `<span class="pch
 /* ---------- STATE / STORAGE ---------- */
 const KEY='darkflow_v1';
 const DEFAULTS={
-  channels:[], media:[], captions:[], schedule:[], jobs:[],
+  channels:[], media:[], captions:[], schedule:[], jobs:[], templates:[],
   platformApps:{ // credenciais do app de desenvolvedor (por plataforma)
     instagram:{app_id:'',app_secret:''}, facebook:{app_id:'',app_secret:''},
     tiktok:{client_key:'',client_secret:''}, youtube:{client_id:'',client_secret:''}
@@ -493,7 +536,7 @@ const DEFAULTS={
   settings:{
     rpm:{instagram:0.6, facebook:1.2, tiktok:0.4, youtube:3.5}, // R$ por 1000 views (estimativa editável)
     currency:'R$',
-    template:'', outDir:'C:\\DarkFlow\\Editados', srcDir:'C:\\DarkFlow\\Originais'
+    template:'', templateId:'', outDir:'C:\\DarkFlow\\Editados', srcDir:'C:\\DarkFlow\\Originais', templateDir:'C:\\DarkFlow\\Templates'
   },
   onboarded:false
 };
@@ -541,7 +584,7 @@ function channelStats(chId){
 
 /* ---------- COUNTS ---------- */
 function updateCounts(){
-  const map={channels:S.channels.length,media:S.media.length,captions:S.captions.length,scheduled:S.schedule.filter(p=>p.status==='scheduled').length};
+  const map={channels:S.channels.length,media:S.media.length,captions:S.captions.length,templates:S.templates.length,scheduled:S.schedule.filter(p=>p.status==='scheduled').length};
   document.querySelectorAll('[data-count]').forEach(el=>el.textContent=map[el.dataset.count]??0);
 }
 
@@ -552,6 +595,7 @@ const ROUTES={
   dashboard:{title:'Dashboard',sub:'Visão geral dos seus canais',render:renderDashboard},
   channels:{title:'Canais',sub:'Plataformas e perfis cadastrados',render:renderChannels},
   library:{title:'Biblioteca de mídia',sub:'Seus vídeos originais e editados',render:renderLibrary},
+  templates:{title:'Templates',sub:'Fundos para aplicar nos seus vídeos',render:renderTemplates},
   editor:{title:'Edição em lote',sub:'Aplique template + legenda em vários vídeos',render:renderEditor},
   captions:{title:'Legendas',sub:'Modelos de legenda reutilizáveis',render:renderCaptions},
   scheduler:{title:'Agendamento',sub:'Planeje as postagens por dia e horário',render:renderScheduler},
@@ -932,6 +976,96 @@ function folderImportModal(){
    BATCH EDITOR
    ============================================================ */
 let editSel=new Set();
+/* ============================================================
+   TEMPLATES (fundos)
+   ============================================================ */
+// preview flutuante ao passar o mouse
+let _hoverPrev=null;
+function hoverPrevEl(){if(!_hoverPrev){_hoverPrev=document.createElement('div');_hoverPrev.className='hoverprev';document.body.appendChild(_hoverPrev)}return _hoverPrev}
+function attachHoverPrev(el,src){
+  if(!src)return;const hp=hoverPrevEl();
+  el.addEventListener('mouseenter',()=>{hp.style.backgroundImage=`url("${src}")`;hp.style.display='block'});
+  el.addEventListener('mousemove',e=>{const w=200,h=355,pad=16;let x=e.clientX+pad,y=e.clientY-h/2;if(x+w>innerWidth-8)x=e.clientX-w-pad;if(y<8)y=8;if(y+h>innerHeight-8)y=innerHeight-h-8;hp.style.left=x+'px';hp.style.top=y+'px'});
+  el.addEventListener('mouseleave',()=>{hp.style.display='none'});
+}
+function aspectLabel(w,h){if(!w||!h)return '';const r=w/h;if(r<0.7)return '9:16';if(r>1.4)return '16:9';return '1:1'}
+function fileToThumb(file,maxW){
+  maxW=maxW||480;
+  const isVid=/^video\//.test(file.type)||/\.(mp4|mov|webm|mkv|m4v)$/i.test(file.name);
+  return new Promise(res=>{
+    if(isVid){
+      const v=document.createElement('video');v.preload='metadata';v.muted=true;v.playsInline=true;
+      const done=(thumb,w,h)=>{try{URL.revokeObjectURL(v.src)}catch(e){}res({thumb:thumb||'',w:w||0,h:h||0,type:'video'})};
+      const cap=()=>{try{const r=Math.min(1,maxW/v.videoWidth);const w=Math.round(v.videoWidth*r),h=Math.round(v.videoHeight*r);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(v,0,0,w,h);done(cv.toDataURL('image/jpeg',0.72),v.videoWidth,v.videoHeight)}catch(e){done('',v.videoWidth,v.videoHeight)}};
+      v.onloadeddata=()=>{try{v.currentTime=Math.min(0.2,(v.duration||1)/2)}catch(e){cap()}};
+      v.onseeked=cap;v.onerror=()=>done('',0,0);setTimeout(()=>done('',v.videoWidth||0,v.videoHeight||0),5000);
+      try{v.src=URL.createObjectURL(file)}catch(e){done('',0,0)}
+    }else{
+      const img=new Image();
+      img.onload=()=>{try{const r=Math.min(1,maxW/img.width);const w=Math.round(img.width*r),h=Math.round(img.height*r);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);const url=cv.toDataURL('image/jpeg',0.78);URL.revokeObjectURL(img.src);res({thumb:url,w:img.width,h:img.height,type:'image'})}catch(e){URL.revokeObjectURL(img.src);res({thumb:'',w:img.width,h:img.height,type:'image'})}};
+      img.onerror=()=>res({thumb:'',w:0,h:0,type:'image'});
+      try{img.src=URL.createObjectURL(file)}catch(e){res({thumb:'',w:0,h:0,type:'image'})}
+    }
+  });
+}
+function pickTemplateFiles(cb){
+  const inp=document.createElement('input');inp.type='file';inp.accept='image/*,video/mp4,video/quicktime,video/webm';inp.multiple=true;
+  inp.onchange=()=>cb([...inp.files]);inp.click();
+}
+async function addTemplateFiles(files){
+  if(!files||!files.length)return;
+  let added=0;
+  for(const f of files){
+    if(!/^image\//.test(f.type)&&!/^video\//.test(f.type)&&!/\.(png|jpe?g|webp|gif|mp4|mov|webm|mkv)$/i.test(f.name))continue;
+    const t=await fileToThumb(f);
+    S.templates.push({id:uid(),name:f.name,type:t.type,thumb:t.thumb,w:t.w,h:t.h,format:aspectLabel(t.w,t.h),path:winPath(S.settings.templateDir,f.name),createdAt:Date.now()});
+    added++;
+  }
+  if(added){save();updateCounts()}
+  return added;
+}
+function renderTemplates(){
+  topBtn(`<button class="btn btn-primary" id="addTpl">${I.plus} Subir template</button>`);
+  document.getElementById('addTpl').addEventListener('click',()=>pickTemplateFiles(async files=>{const n=await addTemplateFiles(files);renderTemplates();toast(n?(n+' template(s) adicionados'):'Nenhum arquivo válido',n?'ok':'warn')}));
+  const c=document.getElementById('content');
+  c.innerHTML=`
+  <div class="notice info">${I.info}<div>Suba aqui as <b>artes de fundo</b> (imagem PNG/JPG ou vídeo) que vão atrás dos seus vídeos. Passe o mouse em cima para <b>ver em tamanho grande</b>. Na <b>Edição em lote</b> você escolhe qual usar.</div></div>
+  <div class="notice warn">${I.warn}<div>Para o editor encontrar o arquivo no PC, mantenha os templates na pasta <b>${esc(S.settings.templateDir)}</b> (ou ajuste o caminho de cada um clicando nele). O preview aqui é só visual.</div></div>
+  <div id="tplGrid"></div>`;
+  drawTemplates();
+}
+function drawTemplates(){
+  const g=document.getElementById('tplGrid');
+  if(!S.templates.length){g.innerHTML=`<div class="card">${emptyHtml(I.layers,'Nenhum template ainda','Suba imagens ou vídeos de fundo para usar na edição em lote.','Subir template')}</div>`;
+    setTimeout(()=>{const b=document.getElementById('emptyBtn');if(b)b.onclick=()=>pickTemplateFiles(async files=>{const n=await addTemplateFiles(files);renderTemplates();toast(n+' template(s) adicionados')})},0);return}
+  g.innerHTML=`<div class="tpl-grid">${S.templates.map(tplCard).join('')}</div>`;
+  S.templates.forEach(t=>{const card=g.querySelector(`[data-tpl="${t.id}"]`);if(card&&t.thumb)attachHoverPrev(card,t.thumb)});
+  g.querySelectorAll('[data-tpl]').forEach(card=>card.addEventListener('click',e=>{if(e.target.closest('[data-tdel]'))return;templateModal(card.dataset.tpl)}));
+  g.querySelectorAll('[data-tdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();confirmDel('template',()=>{S.templates=S.templates.filter(x=>x.id!==b.dataset.tdel);if(S.settings.templateId===b.dataset.tdel)S.settings.templateId='';save();drawTemplates();updateCounts();toast('Template removido')})}));
+}
+function tplCard(t){
+  const bg=t.thumb?`background-image:url("${t.thumb}")`:'';
+  return `<div class="tcard" data-tpl="${t.id}">
+    <div class="tthumb ${t.thumb?'':'empty-thumb'}" style="${bg}">${t.thumb?'':I.layers}<span class="tbadge">${t.type==='video'?'vídeo':(t.format||'img')}</span>
+      <button class="btn btn-icon btn-danger tdel" data-tdel="${t.id}" title="Excluir">${I.trash}</button></div>
+    <div class="tinfo"><div class="tn" title="${esc(t.name)}">${esc(t.name)}</div><div class="tm">${t.w?t.w+'×'+t.h:''}${t.format?' · '+t.format:''}</div></div></div>`;
+}
+function templateModal(id){
+  const t=S.templates.find(x=>x.id===id);if(!t)return;
+  openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
+    <h3>Template</h3><div class="sub">Confira o preview e ajuste o caminho no PC.</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="width:160px;aspect-ratio:9/16;border-radius:12px;border:1px solid var(--border-strong);background:#0a0f0d center/cover no-repeat;${t.thumb?`background-image:url('${t.thumb}')`:''};flex:none;display:grid;place-items:center">${t.thumb?'':I.layers}</div>
+      <div style="flex:1;min-width:200px">
+        <div class="field"><label>Nome</label><input class="input" id="tName" value="${esc(t.name)}"></div>
+        <div class="field"><label>Caminho do arquivo no PC <span class="req">*</span></label><input class="input" id="tPath" value="${esc(t.path||'')}" placeholder="C:\\DarkFlow\\Templates\\fundo.png"><div class="hint">Usado pelo script de edição. Formato detectado: <b>${t.format||'—'}</b> (${t.w?t.w+'×'+t.h:'?'})</div></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-danger" id="tDel" style="margin-right:auto">${I.trash} Excluir</button><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="tSave">${I.check} Salvar</button></div>`);
+  document.getElementById('tSave').addEventListener('click',()=>{t.name=document.getElementById('tName').value.trim()||t.name;t.path=document.getElementById('tPath').value.trim();save();closeModal();drawTemplates();toast('Template salvo')});
+  document.getElementById('tDel').addEventListener('click',()=>{closeModal();confirmDel('template',()=>{S.templates=S.templates.filter(x=>x.id!==id);if(S.settings.templateId===id)S.settings.templateId='';save();drawTemplates();updateCounts();toast('Template removido')})});
+}
+
 function renderEditor(){
   const c=document.getElementById('content');
   const raw=S.media.filter(m=>m.status==='raw'||m.status==='edited');
@@ -950,13 +1084,16 @@ function renderEditor(){
     <div>
       <div class="card card-pad" style="position:sticky;top:84px">
         <div class="block-title" style="margin-top:0">${I.layers} Configuração do job</div>
+        <div id="compWrap" style="display:flex;flex-direction:column;align-items:center;margin-bottom:16px"></div>
         <div class="field"><label>Formato de saída</label>
           <div class="seg" id="fmtSeg">
             <button type="button" class="seg-opt sel" data-f="9:16"><b>9:16</b>Reels/TikTok</button>
             <button type="button" class="seg-opt" data-f="1:1"><b>1:1</b>Feed</button>
             <button type="button" class="seg-opt" data-f="16:9"><b>16:9</b>YouTube</button>
           </div></div>
-        <div class="field"><label>Template de fundo</label><input class="input" id="tplPath" value="${esc(S.settings.template)}" placeholder="C:\\DarkFlow\\template.png"><div class="hint">Imagem/vídeo PNG/MP4 sobreposto. Deixe vazio para só padronizar o formato.</div></div>
+        <div class="field"><label>Template de fundo</label>
+          <div class="tpl-pick-row" id="tplRow"></div>
+          <div class="hint">Passe o mouse num template para ver grande. <a id="tplManage" style="color:var(--primary);cursor:pointer;font-weight:600">Gerenciar templates →</a></div></div>
         <div class="field"><label>Posição do vídeo sobre o template</label>
           <select class="select" id="tplPos"><option value="center">Centralizado</option><option value="top">Topo</option><option value="bottom">Rodapé</option></select></div>
         <div class="field"><label>Pasta de saída</label><input class="input" id="outDir" value="${esc(S.settings.outDir)}"></div>
@@ -965,27 +1102,90 @@ function renderEditor(){
         <p class="hint" style="margin-top:12px;text-align:center">Baixa um <b>.ps1</b> (PowerShell+FFmpeg). Veja como rodar em Configurações → Edição.</p>
       </div>
     </div>
+  </div>
+  <div class="card card-pad" style="margin-top:18px">
+    <div class="chart-head" style="margin-bottom:6px"><h3>${I.eye} Conferir resultado</h3></div>
+    <p class="hint" style="margin-bottom:14px">Depois de rodar o script, selecione os <b>vídeos já editados</b> (na pasta de saída) para assistir aqui e ver se ficou correto.</p>
+    <button class="btn" id="checkResult">${I.folder} Selecionar vídeos editados</button>
+    <div id="resultGrid" style="margin-top:16px"></div>
   </div>`;
   if(raw.length){
     editSel=new Set();drawEdGrid(raw);
     document.getElementById('selAll').addEventListener('click',()=>{raw.forEach(m=>editSel.add(m.id));drawEdGrid(raw)});
     document.getElementById('selNone').addEventListener('click',()=>{editSel.clear();drawEdGrid(raw)});
   }
-  let fmt='9:16';
-  document.getElementById('fmtSeg').addEventListener('click',e=>{const b=e.target.closest('[data-f]');if(!b)return;fmt=b.dataset.f;document.querySelectorAll('#fmtSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.f===fmt))});
+  // estado do job
+  let fmt='9:16', pos='center', selTplId=S.settings.templateId||'';
+  if(selTplId&&!S.templates.some(t=>t.id===selTplId))selTplId='';
+  const burnEl=()=>document.getElementById('optCaption');
+  function drawCompPreview(){
+    const wrap=document.getElementById('compWrap');if(!wrap)return;
+    const dims={'9:16':[180,320],'1:1':[260,260],'16:9':[320,180]}[fmt];
+    const tpl=S.templates.find(t=>t.id===selTplId);
+    const bg=tpl&&tpl.thumb?`background-image:url('${tpl.thumb}')`:'background:linear-gradient(160deg,#13201a,#0a0f0d)';
+    // vídeo ocupa ~78% da largura, posição vertical
+    const vw=Math.round(dims[0]*0.78), vh=Math.round(vw*(fmt==='16:9'?9/16:fmt==='1:1'?1:16/9));
+    const vhc=Math.min(vh,dims[1]-12);
+    let top;if(pos==='top')top=10;else if(pos==='bottom')top=dims[1]-vhc-12;else top=(dims[1]-vhc)/2;
+    const burn=burnEl()&&burnEl().checked;
+    const capRaw=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
+    const cap=capRaw?spin(capRaw).split('\n')[0].replace(/#[^\s#]+/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,'').trim().slice(0,48):'';
+    wrap.innerHTML=`<div class="comp-prev" style="width:${dims[0]}px;height:${dims[1]}px;${bg}">
+        <div class="comp-vid" style="width:${vw}px;height:${vhc}px;top:${top}px;border-radius:6px">VÍDEO</div>
+        ${cap?`<div class="comp-cap" style="bottom:${Math.max(12,dims[1]*0.12)}px">${esc(cap)}</div>`:''}
+      </div>
+      <div class="hint" style="margin-top:8px;text-align:center">Pré-visualização do layout · ${fmt}${tpl?' · '+esc(tpl.name):' · sem template'}</div>`;
+  }
+  function drawTplRow(){
+    const row=document.getElementById('tplRow');if(!row)return;
+    let html=`<div class="tpl-opt ${selTplId===''?'sel':''}" data-t=""><div class="to-thumb">${I.film}</div><div class="to-name">Sem fundo</div></div>`;
+    html+=S.templates.map(t=>`<div class="tpl-opt ${selTplId===t.id?'sel':''}" data-t="${t.id}"><div class="to-thumb" style="${t.thumb?`background-image:url('${t.thumb}')`:''}">${t.thumb?'':I.layers}</div><div class="to-name" title="${esc(t.name)}">${esc(t.name)}</div></div>`).join('');
+    if(!S.templates.length)html+=`<div style="align-self:center;font-size:12.5px;color:var(--muted-2);padding:0 8px">Nenhum template — <a id="tplGo" style="color:var(--primary);cursor:pointer;font-weight:600">subir agora</a></div>`;
+    row.innerHTML=html;
+    row.querySelectorAll('[data-t]').forEach(o=>{
+      const t=S.templates.find(x=>x.id===o.dataset.t);if(t&&t.thumb)attachHoverPrev(o,t.thumb);
+      o.addEventListener('click',()=>{selTplId=o.dataset.t;S.settings.templateId=selTplId;row.querySelectorAll('.tpl-opt').forEach(x=>x.classList.toggle('sel',x.dataset.t===selTplId));drawCompPreview()});
+    });
+    document.getElementById('tplGo')?.addEventListener('click',()=>go('templates'));
+  }
+  drawTplRow();drawCompPreview();
+  document.getElementById('tplManage').addEventListener('click',()=>go('templates'));
+  document.getElementById('fmtSeg').addEventListener('click',e=>{const b=e.target.closest('[data-f]');if(!b)return;fmt=b.dataset.f;document.querySelectorAll('#fmtSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.f===fmt));drawCompPreview()});
+  document.getElementById('tplPos').addEventListener('change',e=>{pos=e.target.value;drawCompPreview()});
+  burnEl().addEventListener('change',drawCompPreview);
   document.getElementById('genScript').addEventListener('click',()=>{
     if(!editSel.size)return toast('Selecione ao menos um vídeo','warn');
-    const tpl=document.getElementById('tplPath').value.trim();const out=document.getElementById('outDir').value.trim()||'C:\\DarkFlow\\Editados';
-    const pos=document.getElementById('tplPos').value;const burn=document.getElementById('optCaption').checked;
-    S.settings.template=tpl;S.settings.outDir=out;save();
+    const tplObj=S.templates.find(t=>t.id===selTplId);
+    const tpl=tplObj?(tplObj.path||winPath(S.settings.templateDir,tplObj.name)):'';
+    const out=document.getElementById('outDir').value.trim()||'C:\\DarkFlow\\Editados';
+    const burn=burnEl().checked;
+    S.settings.template=tpl;S.settings.templateId=selTplId;S.settings.outDir=out;save();
     const vids=S.media.filter(m=>editSel.has(m.id));
     const capText=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
     const script=buildFFmpegScript(vids,{fmt,tpl,out,pos,capText});
     downloadFile('darkflow_editar.ps1',script);
-    // marca como editado
     vids.forEach(m=>{if(m.status==='raw')m.status='edited'});save();updateCounts();
     toast(vids.length+' vídeos no script — baixado!');
   });
+  document.getElementById('checkResult').addEventListener('click',checkEditedResult);
+}
+// player de conferência: seleciona vídeos editados e toca inline
+async function checkEditedResult(){
+  const show=files=>{
+    const grid=document.getElementById('resultGrid');if(!grid)return;
+    const vids=[...files].filter(f=>isVideo(f.name));
+    if(!vids.length){grid.innerHTML=`<div class="empty" style="padding:24px"><p>Nenhum vídeo selecionado.</p></div>`;return}
+    grid.innerHTML=`<div class="res-grid">${vids.map((f,i)=>`<div class="res-card"><video src="${URL.createObjectURL(f)}" controls preload="metadata" playsinline></video><div class="rn" title="${esc(f.name)}">${esc(f.name)}</div></div>`).join('')}</div>`;
+    toast(vids.length+' vídeo(s) carregados para conferência');
+  };
+  if('showOpenFilePicker'in window){
+    try{
+      const handles=await window.showOpenFilePicker({multiple:true,types:[{description:'Vídeos',accept:{'video/*':['.mp4','.mov','.webm','.mkv','.m4v']}}]});
+      const files=await Promise.all(handles.map(h=>h.getFile()));show(files);
+    }catch(e){if(e&&e.name!=='AbortError')toast('Não foi possível abrir','err')}
+  }else{
+    const inp=document.createElement('input');inp.type='file';inp.accept='video/*';inp.multiple=true;inp.onchange=()=>show(inp.files);inp.click();
+  }
 }
 function drawEdGrid(raw){
   const g=document.getElementById('edGrid');
@@ -1566,7 +1766,7 @@ updateCounts();
 (function bootCloud(){const cfg=loadCloudCfg();if(cfg&&cfg.code){cloudConnect(cfg,{silent:true})}})();
 document.getElementById('syncPill').addEventListener('click',openCloudModal);
 go('dashboard');
-window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur}};
+window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel}};
 })();
 </script>
 </body>
