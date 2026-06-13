@@ -1535,7 +1535,25 @@ async function buildAutoEditor(opt){
 function blobToB64(blob){return new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=()=>res('');r.readAsDataURL(blob)})}
 function bytesToB64(bytes){let bin='';const ch=0x8000;for(let i=0;i<bytes.length;i+=ch)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+ch));return btoa(bin)}
 function toEncodedCommand(ps){const n=ps.length,buf=new Uint8Array(n*2);for(let i=0;i<n;i++){const c=ps.charCodeAt(i);buf[i*2]=c&255;buf[i*2+1]=(c>>8)&255}return bytesToB64(buf)}
-function psToBat(ps){return '@echo off\r\ntitle DarkFlow - Editor rapido\r\nchcp 65001 >nul\r\necho.\r\necho   DarkFlow - preparando... (na 1a vez baixa o FFmpeg, aguarde)\r\necho.\r\npowershell -NoProfile -ExecutionPolicy Bypass -STA -EncodedCommand '+toEncodedCommand(ps)+'\r\necho.\r\npause\r\n'}
+// grava o script em pedaços (cada linha < limite do cmd) e roda — evita o erro de linha gigante
+function psToBat(ps){
+  const b64=toEncodedCommand(ps);                 // base64 do script em UTF-16LE
+  const chunks=b64.match(/.{1,5000}/g)||[b64];
+  const L=[];
+  L.push('@echo off');
+  L.push('title DarkFlow - Editor rapido');
+  L.push('echo.');
+  L.push('echo    DarkFlow - preparando... (na 1a vez baixa o FFmpeg, aguarde)');
+  L.push('echo.');
+  L.push('set "B64=%TEMP%\\darkflow_edit.b64"');
+  L.push('type nul > "%B64%"');
+  for(const c of chunks) L.push('>>"%B64%" echo '+c);
+  L.push("powershell -NoProfile -ExecutionPolicy Bypass -STA -Command \"$b=(Get-Content -LiteralPath '%B64%' -Raw) -replace '\\s','';Invoke-Expression ([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($b)))\"");
+  L.push('del "%B64%" >nul 2>&1');
+  L.push('echo.');
+  L.push('pause');
+  return L.join('\r\n');
+}
 function fastEditorPS(o){
   const q=s=>"'"+String(s).replace(/'/g,"''")+"'";
   const L=[];
