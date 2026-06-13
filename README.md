@@ -32,7 +32,8 @@ Canais → Biblioteca → Edição em lote → Legendas → Agendamento → Dash
 |--------|-----------|
 | **Canais** | Cadastre cada perfil que você gerencia (plataforma, @, nicho, RPM). |
 | **Biblioteca** | **Aponte uma pasta do PC** e o sistema puxa todos os vídeos automaticamente (nome, duração e caminho). Ciclo: `bruto → editado → com legenda → agendado → publicado`. Botão **Re-escanear** puxa vídeos novos depois. |
-| **Edição em lote** | Selecione vídeos + template de fundo + formato → **gera um script FFmpeg** que edita tudo de uma vez no seu PC. |
+| **Templates** | Suba as artes de fundo. PNG com área transparente = janela do vídeo **detectada automaticamente**; senão, arraste a janela. Arquivos ficam no IndexedDB (não somem ao recarregar). |
+| **Edição em lote** | **Edita dentro do próprio sistema** (FFmpeg WebAssembly — sem instalar nada): escolhe template, formato e encaixe (preencher/conter), clica em **Editar agora** e assiste o resultado. Opção avançada gera script PowerShell para lotes grandes. |
 | **Legendas** | Modelos reutilizáveis com **spintax** `{opção1\|opção2}` para variações automáticas (evita conteúdo duplicado). |
 | **Agendamento** | Calendário + **fila automática**: escolha quantos posts/dia, em quais horários e por quantos dias. |
 | **Dashboard** | Views, ganhos estimados (modelo RPM), status das postagens e desempenho somando todos os canais. |

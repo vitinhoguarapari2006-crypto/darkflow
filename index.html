@@ -556,12 +556,17 @@ function load(){
   return structuredClone(DEFAULTS);
 }
 function deepMerge(a,b){for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])){a[k]=deepMerge(a[k]||{},b[k])}else{a[k]=b[k]}}return a}
-function save(){localStorage.setItem(KEY,JSON.stringify(S));updateCounts();scheduleCloudPush()}
-function saveLocalOnly(){localStorage.setItem(KEY,JSON.stringify(S));updateCounts()}
+function persistLocal(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){console.warn('localStorage cheio',e);toast('Armazenamento local cheio — dados pesados ficam só na nuvem/IndexedDB','warn');return false}}
+function save(){persistLocal();updateCounts();scheduleCloudPush()}
+function saveLocalOnly(){persistLocal();updateCounts()}
 const uid=()=>Math.random().toString(36).slice(2,9);
 const money=n=>S.settings.currency+' '+ (Math.round(n*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const compact=n=>{n=+n||0;if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1).replace('.0','')+'M';if(n>=1e3)return (n/1e3).toFixed(n>=1e4?0:1).replace('.0','')+'k';return ''+n};
 const esc=s=>(''+(s??'')).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// cache de miniaturas de templates (vêm do IndexedDB, não do localStorage)
+const tplThumbs={};
+async function loadAllTplThumbs(){for(const t of S.templates){if(tplThumbs[t.id]===undefined){const rec=await idbGetV('tpl',t.id);tplThumbs[t.id]=rec?rec.thumb:''}}}
+const tplThumb=id=>tplThumbs[id]||'';
 
 /* ---------- TOAST ---------- */
 function toast(msg,type='ok'){
@@ -875,9 +880,11 @@ const isVideo=n=>VIDEO_RE.test(n);
 const fmtDur=s=>{s=Math.round(s);const m=Math.floor(s/60),ss=s%60;return m+':'+String(ss).padStart(2,'0')};
 function winPath(base,rel){if(!base)return rel.replace(/\//g,'\\');return base.replace(/[\\\/]+$/,'')+'\\'+rel.replace(/\//g,'\\')}
 function getDuration(file){return new Promise(res=>{let done=false;const v=document.createElement('video');v.preload='metadata';const t=setTimeout(()=>{if(!done){done=true;try{URL.revokeObjectURL(v.src)}catch(e){}res('')}},4000);v.onloadedmetadata=()=>{if(done)return;done=true;clearTimeout(t);const d=v.duration;try{URL.revokeObjectURL(v.src)}catch(e){}res(isFinite(d)&&d>0?fmtDur(d):'')};v.onerror=()=>{if(done)return;done=true;clearTimeout(t);try{URL.revokeObjectURL(v.src)}catch(e){}res('')};try{v.src=URL.createObjectURL(file)}catch(e){clearTimeout(t);res('')}})}
-// IndexedDB p/ lembrar a pasta (File System Access API)
-function idbSet(k,val){return new Promise((res,rej)=>{const r=indexedDB.open('darkflow_fs',1);r.onupgradeneeded=()=>r.result.createObjectStore('h');r.onsuccess=()=>{const tx=r.result.transaction('h','readwrite');tx.objectStore('h').put(val,k);tx.oncomplete=()=>res(true);tx.onerror=()=>rej(tx.error)};r.onerror=()=>rej(r.error)})}
-function idbGet(k){return new Promise(res=>{try{const r=indexedDB.open('darkflow_fs',1);r.onupgradeneeded=()=>r.result.createObjectStore('h');r.onsuccess=()=>{try{const tx=r.result.transaction('h','readonly');const g=tx.objectStore('h').get(k);g.onsuccess=()=>res(g.result||null);g.onerror=()=>res(null)}catch(e){res(null)}};r.onerror=()=>res(null)}catch(e){res(null)}})}
+// IndexedDB genérico — store 'h' (handle de pasta) e 'tpl' (templates: thumb+blob)
+function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open('darkflow_fs',2);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('h'))db.createObjectStore('h');if(!db.objectStoreNames.contains('tpl'))db.createObjectStore('tpl')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function idbPut(store,k,v){return idbOpen().then(db=>new Promise((res,rej)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>rej(tx.error)}))}
+function idbGetV(store,k){return idbOpen().then(db=>new Promise(res=>{const tx=db.transaction(store,'readonly');const g=tx.objectStore(store).get(k);g.onsuccess=()=>res(g.result??null);g.onerror=()=>res(null)})).catch(()=>null)}
+function idbDel(store,k){return idbOpen().then(db=>new Promise(res=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).delete(k);tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)})).catch(()=>null)}
 // percorre recursivamente um FileSystemDirectoryHandle
 async function collectFromHandle(dir,base,out){
   for await(const entry of dir.values()){
@@ -907,13 +914,13 @@ async function importItems(items,basePath,onProgress){
 async function renderFolderBar(){
   const bar=document.getElementById('folderBar');if(!bar)return;
   if(!('showDirectoryPicker'in window)){bar.innerHTML='';return}
-  const saved=await idbGet('dir');
+  const saved=await idbGetV('h','dir');
   if(!saved){bar.innerHTML='';return}
   bar.innerHTML=`<div class="slot" style="margin-bottom:16px"><div class="pdot" style="background:rgba(47,230,134,.14);color:var(--primary);width:34px;height:34px">${I.folder}</div>
     <div class="sinfo"><div class="sname">Pasta conectada: ${esc(saved.name||'pasta')}</div><div class="smeta">Re-escaneie para puxar vídeos novos automaticamente.</div></div>
     <button class="btn btn-sm btn-primary" id="rescanBtn">${I.refresh} Re-escanear</button>
     <button class="btn btn-icon btn-ghost" id="forgetFolder" title="Esquecer pasta">${I.trash}</button></div>`;
-  document.getElementById('forgetFolder').addEventListener('click',async()=>{await idbSet('dir',null);renderFolderBar();toast('Pasta esquecida')});
+  document.getElementById('forgetFolder').addEventListener('click',async()=>{await idbDel('h','dir');renderFolderBar();toast('Pasta esquecida')});
   document.getElementById('rescanBtn').addEventListener('click',async()=>{
     const handle=saved.handle;if(!handle)return toast('Reabra a pasta pelo botão Importar','warn');
     try{
@@ -976,7 +983,7 @@ function folderImportModal(){
     const prog=document.getElementById('fiProg'),pbar=document.getElementById('fiProgBar');
     const r=await importItems(picked,base,(i,t,a,s)=>{prog.textContent=`Importando ${i}/${t}… (${a} novos)`;pbar.style.width=Math.round(i/t*100)+'%'});
     // lembra a pasta para re-escanear (apenas File System Access API)
-    if(dirHandle){try{await idbSet('dir',{name:dirHandle.name,handle:dirHandle,base})}catch(e){}}
+    if(dirHandle){try{await idbPut('h','dir',{name:dirHandle.name,handle:dirHandle,base})}catch(e){}}
     closeModal();drawLib();updateCounts();renderFolderBar();
     toast(r.added?(r.added+' vídeos importados'+(r.skipped?' · '+r.skipped+' já existiam':'')):'Todos já estavam na biblioteca','ok');
   });
@@ -1043,7 +1050,11 @@ async function addTemplateFiles(files){
     if(!/^image\//.test(f.type)&&!/^video\//.test(f.type)&&!/\.(png|jpe?g|webp|gif|mp4|mov|webm|mkv)$/i.test(f.name))continue;
     const t=await fileToThumb(f);
     const area=t.area||{x:0.08,y:0.20,w:0.84,h:0.60}; // padrão: janela central deixando margem (evita cobrir tudo)
-    S.templates.push({id:uid(),name:f.name,type:t.type,thumb:t.thumb,w:t.w,h:t.h,format:aspectLabel(t.w,t.h),path:winPath(S.settings.templateDir,f.name),area,transparent:!!t.transparent,createdAt:Date.now()});
+    const id=uid();
+    // miniatura + arquivo original vão para o IndexedDB (NÃO no localStorage -> evita estouro de cota)
+    try{await idbPut('tpl',id,{thumb:t.thumb,blob:f})}catch(e){console.warn('idb tpl',e)}
+    tplThumbs[id]=t.thumb;
+    S.templates.push({id,name:f.name,type:t.type,w:t.w,h:t.h,format:aspectLabel(t.w,t.h),path:winPath(S.settings.templateDir,f.name),area,transparent:!!t.transparent,createdAt:Date.now()});
     added++;
   }
   if(added){save();updateCounts()}
@@ -1058,20 +1069,22 @@ function renderTemplates(){
   <div class="notice warn">${I.warn}<div>Para o editor encontrar o arquivo no PC, mantenha os templates na pasta <b>${esc(S.settings.templateDir)}</b> (ou ajuste o caminho de cada um clicando nele). O preview aqui é só visual.</div></div>
   <div id="tplGrid"></div>`;
   drawTemplates();
+  loadAllTplThumbs().then(()=>{if(current==='templates')drawTemplates()});
 }
 function drawTemplates(){
-  const g=document.getElementById('tplGrid');
+  const g=document.getElementById('tplGrid');if(!g)return;
   if(!S.templates.length){g.innerHTML=`<div class="card">${emptyHtml(I.layers,'Nenhum template ainda','Suba imagens ou vídeos de fundo para usar na edição em lote.','Subir template')}</div>`;
     setTimeout(()=>{const b=document.getElementById('emptyBtn');if(b)b.onclick=()=>pickTemplateFiles(async files=>{const n=await addTemplateFiles(files);renderTemplates();toast(n+' template(s) adicionados')})},0);return}
   g.innerHTML=`<div class="tpl-grid">${S.templates.map(tplCard).join('')}</div>`;
-  S.templates.forEach(t=>{const card=g.querySelector(`[data-tpl="${t.id}"]`);if(card&&t.thumb)attachHoverPrev(card,t.thumb)});
+  S.templates.forEach(t=>{const card=g.querySelector(`[data-tpl="${t.id}"]`);const th=tplThumb(t.id);if(card&&th)attachHoverPrev(card,th)});
   g.querySelectorAll('[data-tpl]').forEach(card=>card.addEventListener('click',e=>{if(e.target.closest('[data-tdel]'))return;templateModal(card.dataset.tpl)}));
-  g.querySelectorAll('[data-tdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();confirmDel('template',()=>{S.templates=S.templates.filter(x=>x.id!==b.dataset.tdel);if(S.settings.templateId===b.dataset.tdel)S.settings.templateId='';save();drawTemplates();updateCounts();toast('Template removido')})}));
+  g.querySelectorAll('[data-tdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();confirmDel('template',()=>{const id=b.dataset.tdel;S.templates=S.templates.filter(x=>x.id!==id);if(S.settings.templateId===id)S.settings.templateId='';delete tplThumbs[id];idbDel('tpl',id);save();drawTemplates();updateCounts();toast('Template removido')})}));
 }
 function tplCard(t){
-  const bg=t.thumb?`background-image:url("${t.thumb}")`:'';
+  const th=tplThumb(t.id);
+  const bg=th?`background-image:url("${th}")`:'';
   return `<div class="tcard" data-tpl="${t.id}">
-    <div class="tthumb ${t.thumb?'':'empty-thumb'}" style="${bg}">${t.thumb?'':I.layers}<span class="tbadge">${t.type==='video'?'vídeo':(t.format||'img')}</span>
+    <div class="tthumb ${th?'':'empty-thumb'}" style="${bg}">${th?'':I.layers}<span class="tbadge">${t.type==='video'?'vídeo':(t.format||'img')}</span>
       <button class="btn btn-icon btn-danger tdel" data-tdel="${t.id}" title="Excluir">${I.trash}</button></div>
     <div class="tinfo"><div class="tn" title="${esc(t.name)}">${esc(t.name)}</div><div class="tm">${t.w?t.w+'×'+t.h:''}${t.format?' · '+t.format:''}</div></div></div>`;
 }
@@ -1100,12 +1113,13 @@ function mountAreaEditor(stage,tpl){
 }
 function templateModal(id){
   const t=S.templates.find(x=>x.id===id);if(!t)return;
+  const th=tplThumb(id);
   const sw=190,sh=Math.round(sw*((t.w&&t.h)?t.h/t.w:16/9));
   openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
     <h3>Ajustar template</h3><div class="sub">Defina onde o vídeo entra. O vídeo será cortado pra encaixar exatamente nessa janela.</div>
     <div style="display:flex;gap:18px;flex-wrap:wrap">
       <div style="flex:none">
-        <div class="area-stage" id="areaStage" style="width:${sw}px;height:${sh}px;${t.thumb?`background-image:url('${t.thumb}')`:''}"></div>
+        <div class="area-stage" id="areaStage" style="width:${sw}px;height:${sh}px;${th?`background-image:url('${th}')`:''}"></div>
         <div class="area-presets">
           <button class="btn btn-sm" data-preset="full">Tela cheia</button>
           <button class="btn btn-sm" data-preset="center">Centro</button>
@@ -1122,14 +1136,14 @@ function templateModal(id){
   const ed=mountAreaEditor(document.getElementById('areaStage'),t);
   document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{const p=b.dataset.preset;ed.set(p==='full'?{x:0,y:0,w:1,h:1}:p==='bottom'?{x:0.06,y:0.42,w:0.88,h:0.54}:DEF_AREA)});
   document.getElementById('tSave').addEventListener('click',()=>{t.name=document.getElementById('tName').value.trim()||t.name;t.path=document.getElementById('tPath').value.trim();t.area=ed.area;save();closeModal();drawTemplates();toast('Template salvo')});
-  document.getElementById('tDel').addEventListener('click',()=>{closeModal();confirmDel('template',()=>{S.templates=S.templates.filter(x=>x.id!==id);if(S.settings.templateId===id)S.settings.templateId='';save();drawTemplates();updateCounts();toast('Template removido')})});
+  document.getElementById('tDel').addEventListener('click',()=>{closeModal();confirmDel('template',()=>{S.templates=S.templates.filter(x=>x.id!==id);if(S.settings.templateId===id)S.settings.templateId='';delete tplThumbs[id];idbDel('tpl',id);save();drawTemplates();updateCounts();toast('Template removido')})});
 }
 
 function renderEditor(){
   const c=document.getElementById('content');
   const raw=S.media.filter(m=>m.status==='raw'||m.status==='edited');
   c.innerHTML=`
-  <div class="notice info">${I.info}<div>Monte um <b>job de edição</b>: escolha um template de fundo + os vídeos, ajuste o formato e gere um <b>script FFmpeg</b> que processa tudo de uma vez no seu PC. Funciona 100% offline com seus arquivos.</div></div>
+  <div class="notice info">${I.info}<div>Escolha o template + os vídeos, ajuste formato e encaixe, e clique em <b>Editar agora no sistema</b> — a edição roda <b>aqui dentro</b> (FFmpeg WebAssembly), sem abrir nenhum outro programa. O vídeo entra na janela do template, cortado na proporção certa.</div></div>
   <div class="steps">
     <div class="step done"><div class="sn">1</div><div><div class="st">Configurar</div><div class="sl">Template & formato</div></div></div>
     <div class="step active"><div class="sn">2</div><div><div class="st">Selecionar</div><div class="sl">Vídeos do acervo</div></div></div>
@@ -1153,13 +1167,20 @@ function renderEditor(){
         <div class="field"><label>Template de fundo</label>
           <div class="tpl-pick-row" id="tplRow"></div>
           <div class="hint">Passe o mouse num template para ver grande. <a id="tplManage" style="color:var(--primary);cursor:pointer;font-weight:600">Gerenciar templates →</a></div></div>
-        <div class="field"><label>Posição do vídeo sobre o template</label>
-          <select class="select" id="tplPos"><option value="center">Centralizado</option><option value="top">Topo</option><option value="bottom">Rodapé</option></select></div>
+        <div class="field"><label>Encaixe do vídeo na janela</label>
+          <div class="seg" id="fitSeg">
+            <button type="button" class="seg-opt sel" data-fit="cover"><b>Preencher</b>corta p/ encher</button>
+            <button type="button" class="seg-opt" data-fit="contain"><b>Conter</b>vídeo inteiro</button>
+          </div><div class="hint">Preencher = ocupa toda a janela (corta sobras). Conter = vídeo inteiro com fundo nas bordas.</div></div>
         <div class="field"><label>Pasta de saída</label><input class="input" id="outDir" value="${esc(S.settings.outDir)}"></div>
         <div class="chk" style="margin-bottom:10px"><input type="checkbox" id="optAutoCrop"><span class="ct">Meu vídeo já tem moldura/fundo — recortar só o conteúdo (auto)</span></div>
         <div class="chk" style="margin-bottom:14px"><input type="checkbox" id="optCaption"><span class="ct">Queimar legenda do modelo padrão no vídeo</span></div>
-        <button class="btn btn-primary" id="genScript" style="width:100%">${I.download} Gerar script de edição</button>
-        <p class="hint" style="margin-top:12px;text-align:center">Baixa um <b>.ps1</b> (PowerShell+FFmpeg). Veja como rodar em Configurações → Edição.</p>
+        <button class="btn btn-primary" id="editNow" style="width:100%">${I.bolt} Editar agora no sistema</button>
+        <div id="renderBox" style="margin-top:12px"></div>
+        <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600">Opção avançada: script PowerShell (lotes grandes)</summary>
+          <button class="btn btn-sm" id="genScript" style="width:100%;margin-top:10px">${I.download} Gerar script .ps1</button>
+          <p class="hint" style="margin-top:8px">Para dezenas de vídeos de uma vez, o script roda mais rápido no seu PC (requer FFmpeg instalado).</p>
+        </details>
       </div>
     </div>
   </div>
@@ -1175,24 +1196,25 @@ function renderEditor(){
     document.getElementById('selNone').addEventListener('click',()=>{editSel.clear();drawEdGrid(raw)});
   }
   // estado do job
-  let fmt='9:16', pos='center', selTplId=S.settings.templateId||'';
+  let fmt='9:16', fit='cover', selTplId=S.settings.templateId||'';
   if(selTplId&&!S.templates.some(t=>t.id===selTplId))selTplId='';
   const burnEl=()=>document.getElementById('optCaption');
   function drawCompPreview(){
     const wrap=document.getElementById('compWrap');if(!wrap)return;
     const dims={'9:16':[180,320],'1:1':[260,260],'16:9':[320,180]}[fmt];
     const tpl=S.templates.find(t=>t.id===selTplId);
+    const tth=tpl?tplThumb(tpl.id):'';
     const a=tpl?tplArea(tpl):{x:0,y:0,w:1,h:1};
     const ax=Math.round(a.x*dims[0]),ay=Math.round(a.y*dims[1]),aw=Math.round(a.w*dims[0]),ah=Math.round(a.h*dims[1]);
     // fundo: template opaco mostra a arte; transparente mostra o vídeo atrás + arte por cima
-    const opaqueBg=tpl&&tpl.thumb&&!tpl.transparent;
-    const bg=opaqueBg?`background-image:url('${tpl.thumb}')`:'background:linear-gradient(160deg,#13201a,#0a0f0d)';
+    const opaqueBg=tth&&!tpl.transparent;
+    const bg=opaqueBg?`background-image:url('${tth}')`:'background:linear-gradient(160deg,#13201a,#0a0f0d)';
     const burn=burnEl()&&burnEl().checked;
     const capRaw=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
     const cap=capRaw?spin(capRaw).split('\n')[0].replace(/#[^\s#]+/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,'').trim().slice(0,48):'';
     wrap.innerHTML=`<div class="comp-prev" style="width:${dims[0]}px;height:${dims[1]}px;${bg}">
         <div class="comp-vid" style="left:${ax}px;top:${ay}px;width:${aw}px;height:${ah}px;transform:none;border-radius:4px">VÍDEO</div>
-        ${tpl&&tpl.transparent&&tpl.thumb?`<img class="comp-tplimg" src="${tpl.thumb}" alt="">`:''}
+        ${tpl&&tpl.transparent&&tth?`<img class="comp-tplimg" src="${tth}" alt="">`:''}
         ${cap?`<div class="comp-cap" style="bottom:${Math.max(12,Math.round(dims[1]*0.1))}px">${esc(cap)}</div>`:''}
       </div>
       <div class="hint" style="margin-top:8px;text-align:center">Layout real · ${fmt}${tpl?' · '+esc(tpl.name):' · sem template'}${tpl?` · <a id="editArea" style="color:var(--primary);cursor:pointer;font-weight:600">ajustar janela</a>`:''}</div>`;
@@ -1201,20 +1223,25 @@ function renderEditor(){
   function drawTplRow(){
     const row=document.getElementById('tplRow');if(!row)return;
     let html=`<div class="tpl-opt ${selTplId===''?'sel':''}" data-t=""><div class="to-thumb">${I.film}</div><div class="to-name">Sem fundo</div></div>`;
-    html+=S.templates.map(t=>`<div class="tpl-opt ${selTplId===t.id?'sel':''}" data-t="${t.id}"><div class="to-thumb" style="${t.thumb?`background-image:url('${t.thumb}')`:''}">${t.thumb?'':I.layers}</div><div class="to-name" title="${esc(t.name)}">${esc(t.name)}</div></div>`).join('');
+    html+=S.templates.map(t=>{const th=tplThumb(t.id);return `<div class="tpl-opt ${selTplId===t.id?'sel':''}" data-t="${t.id}"><div class="to-thumb" style="${th?`background-image:url('${th}')`:''}">${th?'':I.layers}</div><div class="to-name" title="${esc(t.name)}">${esc(t.name)}</div></div>`}).join('');
     if(!S.templates.length)html+=`<div style="align-self:center;font-size:12.5px;color:var(--muted-2);padding:0 8px">Nenhum template — <a id="tplGo" style="color:var(--primary);cursor:pointer;font-weight:600">subir agora</a></div>`;
     row.innerHTML=html;
     row.querySelectorAll('[data-t]').forEach(o=>{
-      const t=S.templates.find(x=>x.id===o.dataset.t);if(t&&t.thumb)attachHoverPrev(o,t.thumb);
+      const t=S.templates.find(x=>x.id===o.dataset.t);const th=t?tplThumb(t.id):'';if(th)attachHoverPrev(o,th);
       o.addEventListener('click',()=>{selTplId=o.dataset.t;S.settings.templateId=selTplId;row.querySelectorAll('.tpl-opt').forEach(x=>x.classList.toggle('sel',x.dataset.t===selTplId));drawCompPreview()});
     });
     document.getElementById('tplGo')?.addEventListener('click',()=>go('templates'));
   }
   drawTplRow();drawCompPreview();
+  loadAllTplThumbs().then(()=>{if(current==='editor'){drawTplRow();drawCompPreview()}});
   document.getElementById('tplManage').addEventListener('click',()=>go('templates'));
   document.getElementById('fmtSeg').addEventListener('click',e=>{const b=e.target.closest('[data-f]');if(!b)return;fmt=b.dataset.f;document.querySelectorAll('#fmtSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.f===fmt));drawCompPreview()});
-  document.getElementById('tplPos').addEventListener('change',e=>{pos=e.target.value;drawCompPreview()});
+  document.getElementById('fitSeg').addEventListener('click',e=>{const b=e.target.closest('[data-fit]');if(!b)return;fit=b.dataset.fit;document.querySelectorAll('#fitSeg .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.fit===fit));drawCompPreview()});
   burnEl().addEventListener('change',drawCompPreview);
+  document.getElementById('editNow').addEventListener('click',()=>{
+    if(!editSel.size)return toast('Selecione ao menos um vídeo','warn');
+    editNowFlow({fmt,fit,selTplId,burn:burnEl().checked});
+  });
   document.getElementById('genScript').addEventListener('click',()=>{
     if(!editSel.size)return toast('Selecione ao menos um vídeo','warn');
     const tplObj=S.templates.find(t=>t.id===selTplId)||null;
@@ -1223,7 +1250,7 @@ function renderEditor(){
     S.settings.template=tplObj?(tplObj.path||''):'';S.settings.templateId=selTplId;S.settings.outDir=out;save();
     const vids=S.media.filter(m=>editSel.has(m.id));
     const capText=burn?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
-    const script=buildFFmpegScript(vids,{fmt,out,pos,capText,template:tplObj,autoCrop});
+    const script=buildFFmpegScript(vids,{fmt,out,fit,capText,template:tplObj,autoCrop});
     downloadFile('darkflow_editar.ps1',script);
     vids.forEach(m=>{if(m.status==='raw')m.status='edited'});save();updateCounts();
     toast(vids.length+' vídeos no script — baixado!');
@@ -1268,6 +1295,12 @@ function sanitizeDrawtext(t){
   return s;
 }
 const evenN=n=>{n=Math.round(n);return n%2?n+1:n};
+// encaixe do vídeo num retângulo w×h: cover (corta) ou contain (vídeo inteiro + barras)
+function fitFilter(w,h,fit){
+  return fit==='contain'
+    ? `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(${w}-iw)/2:(${h}-ih)/2:black`
+    : `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
+}
 function buildFFmpegScript(vids,o){
   const dims={'9:16':[1080,1920],'1:1':[1080,1080],'16:9':[1920,1080]}[o.fmt];
   const W=dims[0],H=dims[1];
@@ -1314,25 +1347,135 @@ function buildFFmpegScript(vids,o){
     if(tplPath){
       let fc;
       if(transparent){
-        // PNG com furo: vídeo recortado na janela, posto em canvas preto, template (com alpha) por cima
-        fc=`[0:v]${sc}scale=${aw}:${ah}:force_original_aspect_ratio=increase,crop=${aw}:${ah},pad=${W}:${H}:${ax}:${ay}:black[v];`
+        // PNG com furo: vídeo encaixado na janela, posto em canvas preto, template (com alpha) por cima
+        fc=`[0:v]${sc}${fitFilter(aw,ah,o.fit)},pad=${W}:${H}:${ax}:${ay}:black[v];`
           +`[v][1:v]overlay=0:0${drawtext?'[ov];[ov]'+drawtext.slice(1):''}`;
       }else{
-        // template opaco: arte ao fundo (tela cheia) + vídeo recortado encaixado na janela
+        // template opaco: arte ao fundo (tela cheia) + vídeo encaixado na janela
         fc=`[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];`
-          +`[0:v]${sc}scale=${aw}:${ah}:force_original_aspect_ratio=increase,crop=${aw}:${ah}[fg];`
+          +`[0:v]${sc}${fitFilter(aw,ah,o.fit)}[fg];`
           +`[bg][fg]overlay=${ax}:${ay}${drawtext?'[ov];[ov]'+drawtext.slice(1):''}`;
       }
       lines.push(`& $ff -y -i "${src}" -i $tpl -filter_complex "${fc}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
     }else{
       // sem template: padroniza formato (com auto-recorte opcional da moldura)
-      lines.push(`& $ff -y -i "${src}" -vf "${sc}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${drawtext}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
+      lines.push(`& $ff -y -i "${src}" -vf "${sc}${fitFilter(W,H,o.fit)}${drawtext}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
     }
     lines.push('');
   });
   lines.push('Write-Host "Concluido! $total videos em $out" -ForegroundColor Cyan');
   lines.push('Read-Host "Pressione Enter para sair"');
   return lines.join('\r\n');
+}
+
+/* ============================================================
+   EDIÇÃO NO PRÓPRIO SISTEMA (FFmpeg WebAssembly) — sem PowerShell
+   ============================================================ */
+const DIMS={'9:16':[1080,1920],'1:1':[1080,1080],'16:9':[1920,1080]};
+let _ff=null,_ffLoading=null,_font=null;
+function loadScript(src){return new Promise((res,rej)=>{if([...document.scripts].some(s=>s.src===src))return res();const s=document.createElement('script');s.src=src;s.onload=()=>res();s.onerror=()=>rej(new Error('falha '+src));document.head.appendChild(s)})}
+async function getFFmpeg(){
+  if(_ff)return _ff;
+  if(_ffLoading)return _ffLoading;
+  _ffLoading=(async()=>{
+    // FFmpeg 0.12 single-thread, arquivos hospedados localmente (mesma origem):
+    // evita SharedArrayBuffer (sem headers COOP/COEP) e o bloqueio de worker cross-origin.
+    await loadScript('vendor/ffmpeg/util.js');
+    await loadScript('vendor/ffmpeg/ffmpeg.js');
+    const {FFmpeg}=window.FFmpegWASM;
+    const ff=new FFmpeg();
+    const vbase=new URL('vendor/ffmpeg/',location.href).href; // URLs absolutas da mesma origem
+    // sem classWorkerURL: o worker é resolvido pela própria origem (clássico, com importScripts)
+    await ff.load({coreURL:vbase+'ffmpeg-core.js',wasmURL:vbase+'ffmpeg-core.wasm'});
+    _ff=ff;return ff;
+  })();
+  return _ffLoading;
+}
+async function getFont(){if(_font!==null)return _font;try{_font=await window.FFmpegUtil.fetchFile('https://cdn.jsdelivr.net/gh/ffmpegwasm/testdata@master/arial.ttf')}catch(e){_font=false}return _font}
+// filtro para o wasm (numérico, sem variáveis de PowerShell)
+function wasmFilter(W,H,tpl,fit,cap){
+  let dt='';
+  if(cap)dt=`,drawtext=fontfile=arial.ttf:text='${cap}':fontcolor=white:fontsize=46:borderw=4:bordercolor=black@0.9:x=(w-text_w)/2:y=${H-220}`;
+  if(tpl){
+    const a=tplArea(tpl);let aw=evenN(a.w*W),ah=evenN(a.h*H),ax=evenN(a.x*W),ay=evenN(a.y*H);
+    aw=Math.max(2,Math.min(W,aw));ah=Math.max(2,Math.min(H,ah));ax=Math.max(0,Math.min(W-aw,ax));ay=Math.max(0,Math.min(H-ah,ay));
+    if(tpl.transparent)return `[0:v]${fitFilter(aw,ah,fit)},pad=${W}:${H}:${ax}:${ay}:black[v];[v][1:v]overlay=0:0${dt?'[ov];[ov]'+dt.slice(1):''}`;
+    return `[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];[0:v]${fitFilter(aw,ah,fit)}[fg];[bg][fg]overlay=${ax}:${ay}${dt?'[ov];[ov]'+dt.slice(1):''}`;
+  }
+  return `[0:v]${fitFilter(W,H,fit)}${dt}`;
+}
+// localiza os arquivos reais dos vídeos selecionados (pasta conectada ou seleção manual)
+async function resolveVideoFiles(vids){
+  const out={};
+  try{
+    const saved=await idbGetV('h','dir');
+    if(saved&&saved.handle){
+      let perm=await saved.handle.queryPermission?.({mode:'read'});
+      if(perm!=='granted')perm=await saved.handle.requestPermission?.({mode:'read'});
+      if(perm==='granted'){const items=await collectFromHandle(saved.handle,'',[]);const byName={};items.forEach(it=>byName[it.name]=it.handle);
+        for(const m of vids){if(byName[m.title])out[m.id]=await byName[m.title].getFile()}}
+    }
+  }catch(e){}
+  return out;
+}
+function pickVideoFilesManual(){return new Promise(res=>{
+  if('showOpenFilePicker'in window){window.showOpenFilePicker({multiple:true,types:[{description:'Vídeos',accept:{'video/*':['.mp4','.mov','.webm','.mkv','.m4v']}}]}).then(hs=>Promise.all(hs.map(h=>h.getFile()))).then(res).catch(()=>res([]))}
+  else{const inp=document.createElement('input');inp.type='file';inp.accept='video/*';inp.multiple=true;inp.onchange=()=>res([...inp.files]);inp.click()}
+})}
+async function saveResultsToFolder(results){
+  if(!('showDirectoryPicker'in window)){results.forEach(r=>{const a=document.createElement('a');a.href=URL.createObjectURL(r.blob);a.download=r.name;a.click()});return}
+  try{const dir=await window.showDirectoryPicker({mode:'readwrite'});for(const r of results){const fh=await dir.getFileHandle(r.name,{create:true});const w=await fh.createWritable();await w.write(r.blob);await w.close()}toast(results.length+' vídeos salvos na pasta ✦')}
+  catch(e){if(e&&e.name!=='AbortError')toast('Não foi possível salvar','err')}
+}
+async function editNowFlow(opt){
+  const box=document.getElementById('renderBox');const setMsg=h=>{if(box)box.innerHTML=h};
+  const vids=S.media.filter(m=>editSel.has(m.id));
+  if(!vids.length)return toast('Selecione ao menos um vídeo','warn');
+  setMsg(`<div class="hint">Localizando os arquivos dos vídeos…</div>`);
+  let files=await resolveVideoFiles(vids);
+  if(vids.some(m=>!files[m.id])){
+    toast('Selecione os arquivos de vídeo no seu PC','warn');
+    const picked=await pickVideoFilesManual();const byName={};picked.forEach(f=>byName[f.name]=f);
+    vids.forEach(m=>{if(!files[m.id]&&byName[m.title])files[m.id]=byName[m.title]});
+  }
+  const ready=vids.filter(m=>files[m.id]);
+  if(!ready.length){setMsg(`<div class="notice warn" style="margin:0">${I.warn}<div>Não achei os arquivos. Conecte a pasta na Biblioteca (Importar pasta) ou selecione os vídeos.</div></div>`);return}
+  const tpl=S.templates.find(t=>t.id===opt.selTplId)||null;
+  let tplBlob=null;if(tpl){const rec=await idbGetV('tpl',tpl.id);tplBlob=rec?rec.blob:null;if(!tplBlob){setMsg(`<div class="notice warn" style="margin:0">${I.warn}<div>Arquivo do template não encontrado. Re-suba o template.</div></div>`);return}}
+  let ff;
+  try{setMsg(`<div class="hint">⚙️ Carregando o motor de edição… (na 1ª vez baixa ~30MB, depois fica em cache)</div>`);ff=await getFFmpeg()}
+  catch(e){console.warn(e);setMsg(`<div class="notice warn" style="margin:0">${I.warn}<div>Não consegui carregar o motor de edição (verifique a internet). Você pode usar a opção de script PowerShell.</div></div>`);return}
+  let cap=opt.burn?sanitizeDrawtext(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
+  const fontBytes=cap?await getFont():false;if(!fontBytes)cap='';
+  const [W,H]=DIMS[opt.fmt];const filter=wasmFilter(W,H,tpl,opt.fit,cap);
+  const fetchFile=window.FFmpegUtil.fetchFile;
+  const resultGrid=document.getElementById('resultGrid');if(resultGrid)resultGrid.innerHTML='';
+  const results=[];
+  if(tplBlob)await ff.writeFile('tpl.png',await fetchFile(tplBlob));
+  if(cap&&fontBytes)await ff.writeFile('arial.ttf',fontBytes);
+  for(let i=0;i<ready.length;i++){
+    const m=ready[i];
+    setMsg(`<div style="margin-bottom:8px;font-size:13px;color:var(--text);font-weight:600">Editando ${i+1}/${ready.length}: ${esc(m.title)}</div><div class="prog"><i style="width:${Math.round(i/ready.length*100)}%"></i></div><div class="hint" style="margin-top:6px">Pode levar alguns segundos por vídeo.</div>`);
+    try{
+      await ff.writeFile('in.mp4',await fetchFile(files[m.id]));
+      let args=['-i','in.mp4'];if(tplBlob)args.push('-i','tpl.png');
+      if(tplBlob)args.push('-filter_complex',filter);else args.push('-vf',filter);
+      args.push('-c:v','libx264','-preset','ultrafast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','out.mp4');
+      await ff.exec(args);
+      const data=await ff.readFile('out.mp4');const blob=new Blob([data.buffer],{type:'video/mp4'});
+      const outName=(m.title||'video').replace(/\.[^.]+$/,'')+'_edit.mp4';
+      results.push({name:outName,blob});
+      if(resultGrid){const url=URL.createObjectURL(blob);const card=document.createElement('div');card.className='res-card';card.innerHTML=`<video src="${url}" controls preload="metadata" playsinline></video><div class="rn" title="${esc(outName)}">${esc(outName)}</div>`;resultGrid.appendChild(card)}
+      if(m.status==='raw'||m.status==='edited')m.status='edited';
+      try{await ff.deleteFile('in.mp4')}catch(e){}try{await ff.deleteFile('out.mp4')}catch(e){}
+    }catch(e){console.warn('render falhou',m.title,e);results.push({name:m.title,error:true})}
+  }
+  save();updateCounts();
+  const ok=results.filter(r=>!r.error);
+  setMsg(`<div class="notice info" style="margin:0">${I.check}<div><b>${ok.length} de ${ready.length} vídeo(s) editados!</b> Veja em “Conferir resultado” abaixo.<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn btn-sm btn-primary" id="dlAll">${I.download} Baixar todos</button><button class="btn btn-sm" id="saveAll">${I.folder} Salvar na pasta</button></div></div></div>`);
+  document.getElementById('dlAll').onclick=()=>ok.forEach(r=>{const a=document.createElement('a');a.href=URL.createObjectURL(r.blob);a.download=r.name;a.click()});
+  document.getElementById('saveAll').onclick=()=>saveResultsToFolder(ok);
+  document.getElementById('resultGrid')?.scrollIntoView({behavior:'smooth'});
 }
 
 /* ============================================================
@@ -1666,8 +1809,9 @@ function localVer(){return +localStorage.getItem('darkflow_localver')||0}
 function setLocalVer(v){localStorage.setItem('darkflow_localver',v)}
 function hasData(){return S.channels.length||S.media.length||S.captions.length||S.schedule.length||Object.keys(S.credentials||{}).length}
 function scheduleCloudPush(){if(!cloud.connected)return;clearTimeout(cloud.pushTimer);cloud.pushTimer=setTimeout(()=>cloudPush(),700)}
+// templates (miniaturas/arquivos) ficam locais no IndexedDB de cada dispositivo — não vão para a nuvem
 function syncPayload(){return {channels:S.channels,media:S.media,captions:S.captions,schedule:S.schedule,jobs:S.jobs,platformApps:S.platformApps,credentials:S.credentials,settings:S.settings,onboarded:S.onboarded}}
-function adoptRemote(d){S=deepMerge(structuredClone(DEFAULTS),d);saveLocalOnly()}
+function adoptRemote(d){const localTpls=S.templates;S=deepMerge(structuredClone(DEFAULTS),d);S.templates=localTpls;saveLocalOnly()}
 function updateSyncUI(){
   const dot=document.getElementById('syncDot'),txt=document.getElementById('syncTxt');
   if(dot)dot.className='dot'+(cloud.connected?'':' warn');
@@ -1844,7 +1988,7 @@ updateCounts();
 (function bootCloud(){const cfg=loadCloudCfg();if(cfg&&cfg.code){cloudConnect(cfg,{silent:true})}})();
 document.getElementById('syncPill').addEventListener('click',openCloudModal);
 go('dashboard');
-window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel}};
+window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg}};
 })();
 </script>
 </body>
