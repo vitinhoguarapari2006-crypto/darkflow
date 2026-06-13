@@ -1192,11 +1192,13 @@ function renderEditor(){
         <div class="chk" style="margin-bottom:14px"><input type="checkbox" id="optCaption"><span class="ct">Queimar legenda do modelo padrão no vídeo</span></div>
         <button class="btn btn-primary" id="editNow" style="width:100%">${I.bolt} Editar agora no sistema</button>
         <div id="renderBox" style="margin-top:12px"></div>
-        <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600">Modo nativo (rápido) — script & automático</summary>
-          <button class="btn btn-sm btn-primary" id="autoEditorBtn" style="width:100%;margin-top:10px">${I.refresh} Editor automático (vigia pasta)</button>
-          <p class="hint" style="margin-top:6px">Roda <b>uma vez</b> e fica vigiando: todo vídeo que você jogar na pasta <b>C:\\DarkFlow\\Entrada</b> é editado nativo (rápido) <b>automaticamente</b>, sem abrir mais nada.</p>
-          <button class="btn btn-sm" id="genScript" style="width:100%;margin-top:10px">${I.download} Gerar script único (.ps1)</button>
-          <p class="hint" style="margin-top:6px">Edita os vídeos selecionados de uma vez no PC (requer FFmpeg).</p>
+        <details style="margin-top:10px" open><summary style="cursor:pointer;font-size:12.5px;color:var(--primary);font-weight:700">⚡ Modo nativo (bem mais rápido — recomendado)</summary>
+          <button class="btn btn-sm btn-primary" id="fastEditorBtn" style="width:100%;margin-top:10px">${I.download} Baixar editor rápido (.bat)</button>
+          <p class="hint" style="margin-top:6px"><b>2 cliques</b> no arquivo → ele instala o FFmpeg sozinho (1ª vez), pede a <b>pasta dos vídeos</b> e a <b>pasta de saída</b>, e edita todos rápido <b>usando sua placa de vídeo</b>. Sem criar pasta, sem digitar caminho.</p>
+          <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted-2)">outras opções</summary>
+            <button class="btn btn-sm" id="autoEditorBtn" style="width:100%;margin-top:8px">${I.refresh} Editor que vigia uma pasta</button>
+            <button class="btn btn-sm" id="genScript" style="width:100%;margin-top:8px">${I.download} Script só dos vídeos selecionados</button>
+          </details>
         </details>
       </div>
     </div>
@@ -1280,6 +1282,12 @@ function renderEditor(){
     downloadFile('darkflow_editar.ps1',script);
     vids.forEach(m=>{if(m.status==='raw')m.status='edited'});save();updateCounts();
     toast(vids.length+' vídeos no script — baixado!');
+  });
+  document.getElementById('fastEditorBtn')?.addEventListener('click',()=>{
+    const tplObj=S.templates.find(t=>t.id===selTplId)||null;
+    if(!tplObj)return toast('Escolha um template de fundo primeiro','warn');
+    const capText=burnEl().checked?(S.captions.find(c=>c.default)?.text||S.captions[0]?.text||''):'';
+    buildFastEditor({fmt,fit,template:tplObj,capText,srcCrop:srcMode==='manual'?srcCrop:null});
   });
   document.getElementById('autoEditorBtn')?.addEventListener('click',()=>{
     const tplObj=S.templates.find(t=>t.id===selTplId)||null;
@@ -1521,6 +1529,81 @@ async function buildAutoEditor(opt){
       <li>Deixe a janela aberta. Pra ligar junto com o Windows: aperte <b>Win+R</b>, digite <code style="color:var(--primary)">shell:startup</code> e coloque um atalho do script lá.</li>
     </ol>
     <div class="notice info" style="margin:8px 0 0">${I.info}<div>Se o Windows bloquear, rode uma vez: <code style="color:var(--primary)">Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code>. O template já está embutido no script.</div></div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Entendi</button></div>`);
+}
+// ===== Editor RÁPIDO nativo: .bat de 2 cliques (FFmpeg auto + GPU + janelas de pasta) =====
+function blobToB64(blob){return new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=()=>res('');r.readAsDataURL(blob)})}
+function bytesToB64(bytes){let bin='';const ch=0x8000;for(let i=0;i<bytes.length;i+=ch)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+ch));return btoa(bin)}
+function toEncodedCommand(ps){const n=ps.length,buf=new Uint8Array(n*2);for(let i=0;i<n;i++){const c=ps.charCodeAt(i);buf[i*2]=c&255;buf[i*2+1]=(c>>8)&255}return bytesToB64(buf)}
+function psToBat(ps){return '@echo off\r\ntitle DarkFlow - Editor rapido\r\nchcp 65001 >nul\r\necho.\r\necho   DarkFlow - preparando... (na 1a vez baixa o FFmpeg, aguarde)\r\necho.\r\npowershell -NoProfile -ExecutionPolicy Bypass -STA -EncodedCommand '+toEncodedCommand(ps)+'\r\necho.\r\npause\r\n'}
+function fastEditorPS(o){
+  const q=s=>"'"+String(s).replace(/'/g,"''")+"'";
+  const L=[];
+  L.push('Add-Type -AssemblyName System.Windows.Forms | Out-Null');
+  L.push('$ErrorActionPreference="Stop"');
+  L.push('# --- FFmpeg automatico (baixa uma vez se nao tiver) ---');
+  L.push('$ff=(Get-Command ffmpeg -ErrorAction SilentlyContinue).Source');
+  L.push('if(-not $ff){');
+  L.push('  $ffdir=Join-Path $env:LOCALAPPDATA "DarkFlow\\ffmpeg"; $ff=Join-Path $ffdir "ffmpeg.exe"');
+  L.push('  if(-not (Test-Path $ff)){');
+  L.push('    [System.Windows.Forms.MessageBox]::Show("Primeira vez: vou baixar o FFmpeg (~80MB). Clique OK e aguarde.","DarkFlow")|Out-Null');
+  L.push('    New-Item -ItemType Directory -Force $ffdir|Out-Null; $zip=Join-Path $env:TEMP "ffmpeg.zip"');
+  L.push('    try{ Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zip -UseBasicParsing }catch{ [System.Windows.Forms.MessageBox]::Show("Falha ao baixar o FFmpeg. Verifique a internet.","DarkFlow")|Out-Null; exit }');
+  L.push('    Expand-Archive $zip -DestinationPath $ffdir -Force');
+  L.push('    $exe=Get-ChildItem $ffdir -Recurse -Filter ffmpeg.exe|Select-Object -First 1; Copy-Item $exe.FullName $ff -Force');
+  L.push('  }');
+  L.push('}');
+  L.push('# --- template embutido ---');
+  L.push('$tplB64=@"'); L.push(o.b64); L.push('"@');
+  L.push('$tpl=Join-Path $env:TEMP "darkflow_tpl.png"; [IO.File]::WriteAllBytes($tpl,[Convert]::FromBase64String($tplB64))');
+  L.push('$filter='+q(o.filter));
+  L.push('# --- escolha das pastas (janelas do Windows) ---');
+  L.push('$d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description="Selecione a pasta COM OS VIDEOS para editar"; $d.ShowNewFolderButton=$false');
+  L.push('if($d.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK){exit}; $in=$d.SelectedPath');
+  L.push('$d2=New-Object System.Windows.Forms.FolderBrowserDialog; $d2.Description="Selecione a pasta para SALVAR os videos editados"');
+  L.push('if($d2.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK){exit}; $out=$d2.SelectedPath');
+  L.push('# --- usa a placa de video se disponivel (rapido) ---');
+  L.push('$encList = & $ff -hide_banner -encoders 2>&1 | Out-String');
+  L.push('if($encList -match "h264_nvenc"){ $venc=@("-c:v","h264_nvenc","-preset","p4","-cq","23") }');
+  L.push('elseif($encList -match "h264_qsv"){ $venc=@("-c:v","h264_qsv","-global_quality","23") }');
+  L.push('elseif($encList -match "h264_amf"){ $venc=@("-c:v","h264_amf","-quality","balanced","-rc","cqp","-qp_i","23","-qp_p","23") }');
+  L.push('else{ $venc=@("-c:v","libx264","-preset","veryfast","-crf","20") }');
+  L.push('$vids=Get-ChildItem -LiteralPath $in -File | Where-Object { $_.Extension -match "\\.(mp4|mov|webm|mkv|m4v|avi)$" }');
+  L.push('$total=$vids.Count; if($total -eq 0){ [System.Windows.Forms.MessageBox]::Show("Nenhum video encontrado nessa pasta.","DarkFlow")|Out-Null; exit }');
+  L.push('Write-Host ("Encoder: "+$venc[1]+"  |  "+$total+" videos") -ForegroundColor Cyan; $i=0; $ok=0');
+  L.push('foreach($v in $vids){');
+  L.push('  $i++; $dest=Join-Path $out ($v.BaseName+"_edit.mp4")');
+  L.push('  Write-Host ("[$i/$total] "+$v.Name) -ForegroundColor Green');
+  L.push('  & $ff -y -i $v.FullName -i $tpl -filter_complex $filter @venc -pix_fmt yuv420p -c:a aac -b:a 128k $dest 2>$null');
+  L.push('  if(Test-Path $dest){ $ok++ }');
+  L.push('}');
+  L.push('try{ Start-Process $out }catch{}');
+  L.push('[System.Windows.Forms.MessageBox]::Show(("Pronto! "+$ok+" de "+$total+" videos editados em:`n"+$out),"DarkFlow")|Out-Null');
+  return L.join('\r\n');
+}
+async function buildFastEditor(opt){
+  if(!opt.template){toast('Escolha um template primeiro','warn');return}
+  toast('Gerando editor rápido…');
+  const rec=await idbGetV('tpl',opt.template.id);
+  if(!rec||!rec.blob){toast('Arquivo do template não encontrado — re-suba o template','err');return}
+  const b64=await blobToB64(rec.blob);
+  if(!b64){toast('Falha ao ler o template','err');return}
+  const [W,H]=DIMS[opt.fmt];
+  const cap=opt.capText?sanitizeDrawtext(opt.capText):'';
+  const filter=wasmFilter(W,H,opt.template,opt.fit,cap,opt.srcCrop||null);
+  const ps=fastEditorPS({b64,filter,fmt:opt.fmt});
+  downloadFile('darkflow-editor.bat',psToBat(ps));
+  openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
+    <h3>${I.bolt} Editor rápido pronto!</h3><div class="sub">Edição nativa, com a sua placa de vídeo. Sem instalar nada na mão.</div>
+    <ol style="font-size:14px;color:var(--text);line-height:2;padding-left:20px">
+      <li>Salvou <b>darkflow-editor.bat</b> (provavelmente em Downloads).</li>
+      <li><b>Dê 2 cliques</b> nele. (Se o Windows avisar "Windows protegeu seu PC" → <b>Mais informações → Executar assim mesmo</b>.)</li>
+      <li>Na 1ª vez ele <b>baixa o FFmpeg sozinho</b> (~80MB, uma única vez).</li>
+      <li>Vai abrir uma janela: <b>escolha a pasta com seus vídeos</b>.</li>
+      <li>Depois: <b>escolha a pasta para salvar</b> os editados.</li>
+      <li>Pronto — ele edita todos e abre a pasta no final. 🚀</li>
+    </ol>
+    <div class="notice info" style="margin:8px 0 0">${I.info}<div>O template e o recorte que você marcou já estão <b>embutidos</b> no arquivo. Se tiver placa NVIDIA/AMD/Intel, ele usa pra ficar bem mais rápido.</div></div>
     <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Entendi</button></div>`);
 }
 // marca o recorte da filmagem real sobre um quadro do vídeo de origem
@@ -2116,7 +2199,7 @@ updateCounts();
 (function bootCloud(){const cfg=loadCloudCfg();if(cfg&&cfg.code){cloudConnect(cfg,{silent:true})}})();
 document.getElementById('syncPill').addEventListener('click',openCloudModal);
 go('dashboard');
-window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg,srcCropPrefix,autoEditorPS,buildFFmpegScript}};
+window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg,srcCropPrefix,autoEditorPS,buildFFmpegScript,fastEditorPS,toEncodedCommand,psToBat}};
 })();
 </script>
 </body>
