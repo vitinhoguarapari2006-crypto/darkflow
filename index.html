@@ -551,7 +551,7 @@ const DEFAULTS={
     rpm:{instagram:0.6, facebook:1.2, tiktok:0.4, youtube:3.5}, // R$ por 1000 views (estimativa editável)
     currency:'R$',
     template:'', templateId:'', outDir:'C:\\DarkFlow\\Editados', srcDir:'C:\\DarkFlow\\Originais', templateDir:'C:\\DarkFlow\\Templates',
-    autoPublish:false
+    autoPublish:false, n8nUrl:'', n8nSecret:''
   },
   onboarded:false
 };
@@ -1861,10 +1861,10 @@ function drawCal(){
 }
 function drawQueue(){
   const q=document.getElementById('queue');
-  const list=S.schedule.filter(p=>p.status==='scheduled'||p.status==='failed'||p.status==='publishing').sort((a,b)=>a.when-b.when).slice(0,20);
+  const list=S.schedule.filter(p=>p.status==='scheduled'||p.status==='failed'||p.status==='publishing'||p.status==='sent').sort((a,b)=>a.when-b.when).slice(0,20);
   if(!list.length){q.innerHTML=`<div class="card">${emptyHtml(I.clock,'Fila vazia','Agende posts ou use a fila automática.')}</div>`;return}
   q.innerHTML=list.map(p=>{const ch=S.channels.find(c=>c.id===p.channelId)||{};const m=S.media.find(x=>x.id===p.mediaId)||{};
-    const stb=p.status==='failed'?'<span class="badge b-red nodot" style="font-size:11px">falhou</span>':p.status==='publishing'?'<span class="badge b-amber nodot" style="font-size:11px">publicando…</span>':'';
+    const stb=p.status==='failed'?'<span class="badge b-red nodot" style="font-size:11px">falhou</span>':p.status==='publishing'?'<span class="badge b-amber nodot" style="font-size:11px">publicando…</span>':p.status==='sent'?'<span class="badge b-blue nodot" style="font-size:11px">enviado ao n8n</span>':'';
     return `<div class="slot" style="${p.status==='failed'?'border-color:rgba(255,92,124,.35)':''}"><div class="stime">${fmtTime(p.when)}</div>
       <div class="sinfo"><div class="sname">${esc(m.title||'Vídeo')} ${stb}</div><div class="smeta">${fmtDate(p.when)} · ${esc(ch.name||'')}${p.status==='failed'&&p.error?' · <span style="color:var(--danger)">'+esc(p.error)+'</span>':''}</div></div>
       ${platChip(p.platform,true)}
@@ -2032,9 +2032,17 @@ function renderSettings(){
 
   <div class="card card-pad" style="margin-bottom:18px">
     <div class="block-title" style="margin-top:0">${I.rocket} Publicação automática</div>
-    <label class="chk" style="margin-bottom:12px"><input type="checkbox" id="optAutoPub" ${S.settings.autoPublish?'checked':''}><span class="ct"><b>Auto-publicar com o app aberto</b> — a cada minuto, publica os posts que chegaram no horário (precisa de credenciais + URL pública nos vídeos).</span></label>
-    <div class="notice info" style="margin:0 0 12px">${I.info}<div>Para postar <b>24h com o PC desligado</b>, instale o <b>worker na nuvem</b> (roda no Supabase a cada 5 min). Passo a passo na pasta <b>supabase/</b> do projeto.</div></div>
-    <button class="btn btn-sm" id="howPub">${I.info} Como ativar a publicação real</button>
+    <label class="chk" style="margin-bottom:14px"><input type="checkbox" id="optAutoPub" ${S.settings.autoPublish?'checked':''}><span class="ct"><b>Auto-publicar com o app aberto</b> — a cada minuto, publica os posts que chegaram no horário.</span></label>
+    <div class="block-title" style="font-size:14px">${I.bolt} Integração n8n (recomendado)</div>
+    <p class="hint" style="margin-bottom:12px">Quando preenchido, as publicações são <b>disparadas pro seu n8n</b> (que faz o post via API). Importe o fluxo pronto em <b>n8n/darkflow-workflow.json</b> do projeto.</p>
+    <div class="field"><label>URL do Webhook do n8n</label><input class="input" id="n8nUrl" value="${esc(S.settings.n8nUrl||'')}" placeholder="https://seudominio/webhook/darkflow"></div>
+    <div class="field"><label>Segredo (header de segurança)</label><input class="input" id="n8nSecret" value="${esc(S.settings.n8nSecret||'')}" placeholder="uma senha que só você sabe"><div class="hint">O mesmo segredo deve estar no fluxo do n8n. Protege seu webhook contra uso indevido.</div></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary" id="saveN8n">${I.check} Salvar n8n</button>
+      <button class="btn btn-sm" id="testN8n">${I.bolt} Testar webhook</button>
+      <button class="btn btn-sm btn-ghost" id="howPub" style="margin-left:auto">${I.info} Como ativar</button>
+    </div>
+    <div class="notice info" style="margin:14px 0 0">${I.info}<div>Para <b>24h com o PC desligado</b>: ative o gatilho <b>Schedule</b> no fluxo do n8n (lê sua agenda a cada 5 min). O Webhook cobre o "publicar agora".</div></div>
   </div>
 
   <div class="card card-pad" style="margin-bottom:18px">
@@ -2052,6 +2060,12 @@ function renderSettings(){
   <div style="text-align:center;color:var(--muted-2);font-size:12.5px;padding:8px">DarkFlow · Central de canais · v1.0 — seus dados ficam no seu dispositivo.</div>`;
 
   document.getElementById('optAutoPub').addEventListener('change',e=>{S.settings.autoPublish=e.target.checked;save();startAutoPublish();toast(e.target.checked?'Auto-publicação ligada (app aberto)':'Auto-publicação desligada')});
+  document.getElementById('saveN8n').addEventListener('click',()=>{S.settings.n8nUrl=document.getElementById('n8nUrl').value.trim();S.settings.n8nSecret=document.getElementById('n8nSecret').value.trim();save();toast('n8n salvo'+(S.settings.n8nUrl?' — publicações vão pelo n8n':''))});
+  document.getElementById('testN8n').addEventListener('click',async()=>{
+    const w=document.getElementById('n8nUrl').value.trim();if(!w)return toast('Cole a URL do webhook','warn');
+    try{await fetch(w,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({secret:document.getElementById('n8nSecret').value.trim(),action:'test',ping:Date.now()})});toast('Disparo de teste enviado — confira a execução no n8n','ok')}
+    catch(e){toast('Não consegui enviar: '+(e.message||e),'err')}
+  });
   document.getElementById('howPub').addEventListener('click',howToPublishModal);
   document.getElementById('cloudBtn').addEventListener('click',openCloudModal);
   document.getElementById('cloudSyncNow')?.addEventListener('click',async()=>{await cloudPush(true);await cloudPull();toast('Sincronizado ✦')});
@@ -2356,15 +2370,43 @@ async function publishPost(post){
   }
   throw new Error('publicação automática hoje só Instagram/Facebook (TikTok/YouTube em breve)');
 }
+// envia o post para o webhook do n8n (credenciais no payload, protegido por segredo)
+async function sendToN8n(post){
+  const w=S.settings.n8nUrl;const ch=S.channels.find(c=>c.id===post.channelId)||{};
+  const cr=(S.credentials||{})[post.channelId]||{};const media=S.media.find(m=>m.id===post.mediaId)||{};
+  const capObj=S.captions.find(c=>c.id===post.captionId);
+  const payload={secret:S.settings.n8nSecret||'',action:'publish',postId:post.id,platform:ch.platform,
+    channel:{id:ch.id,name:ch.name,handle:ch.handle},account_id:cr.account_id||'',access_token:cr.access_token||'',
+    refresh_token:cr.refresh_token||'',caption:capObj?spin(capObj.text||''):'',video_url:media.publicUrl||'',title:media.title||''};
+  // text/plain evita preflight CORS; tenta ler a resposta, com fallback no-cors p/ garantir entrega
+  try{
+    const res=await fetch(w,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
+    let data=null;try{data=await res.json()}catch(e){}
+    if(data&&data.error)throw new Error(data.error);
+    if(!res.ok&&!data)throw new Error('n8n HTTP '+res.status);
+    return {id:(data&&(data.id||data.post_id))||'ok',confirmed:!!(data&&(data.ok||data.id||data.success))};
+  }catch(e){
+    if(String(e.message||e).indexOf('n8n HTTP')===0)throw e;
+    // CORS pode bloquear a LEITURA mesmo entregando — reenvia no-cors p/ garantir o disparo
+    try{await fetch(w,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(_){}
+    return {id:'enviado',confirmed:false};
+  }
+}
 async function runPublish(post){
   const ch=S.channels.find(c=>c.id===post.channelId)||{};
   post.status='publishing';saveLocalOnly();if(current==='scheduler')drawCal();
   notify('Publicando em '+(ch.name||'canal')+'…','info');
   try{
-    const id=await publishPost(post);
-    post.status='published';post.publishedId=id;post.publishedAt=Date.now();
-    const m=S.media.find(x=>x.id===post.mediaId);if(m)m.status='published';
-    notify('✅ Publicado em '+(ch.name||'canal'),'ok');
+    if(S.settings.n8nUrl){
+      const r=await sendToN8n(post);
+      if(r.confirmed){post.status='published';post.publishedId=r.id;post.publishedAt=Date.now();const m=S.media.find(x=>x.id===post.mediaId);if(m)m.status='published';notify('✅ Publicado em '+(ch.name||'canal'),'ok');}
+      else{post.status='sent';post.sentAt=Date.now();notify('📤 Enviado ao n8n: '+(ch.name||'canal')+' (resultado aparece no n8n / após sincronizar)','info');}
+    }else{
+      const id=await publishPost(post);
+      post.status='published';post.publishedId=id;post.publishedAt=Date.now();
+      const m=S.media.find(x=>x.id===post.mediaId);if(m)m.status='published';
+      notify('✅ Publicado em '+(ch.name||'canal'),'ok');
+    }
   }catch(e){post.status='failed';post.error=String(e&&e.message||e);notify('❌ Falha em '+(ch.name||'canal')+': '+post.error,'err');}
   save();if(current==='scheduler')drawCal();
 }

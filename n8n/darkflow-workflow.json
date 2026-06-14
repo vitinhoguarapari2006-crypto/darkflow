@@ -1,0 +1,147 @@
+{
+  "name": "DarkFlow - Publicador (Webhook IG/FB)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "darkflow",
+        "responseMode": "responseNode",
+        "options": { "allowedOrigins": "*" }
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "darkflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "// normaliza o corpo (pode vir como texto) e confere o segredo\nconst raw = $input.first().json.body;\nconst b = typeof raw === 'string' ? JSON.parse(raw) : (raw || $input.first().json);\nconst SEGREDO = 'TROQUE_PELO_SEU_SEGREDO';\nif ((b.secret || '') !== SEGREDO) { throw new Error('segredo invalido'); }\nreturn [{ json: b }];"
+      },
+      "id": "node-secret",
+      "name": "Checar segredo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.platform }}",
+        "rules": {
+          "rules": [
+            { "operation": "equal", "value2": "instagram", "output": 0 },
+            { "operation": "equal", "value2": "facebook", "output": 1 }
+          ]
+        }
+      },
+      "id": "node-switch",
+      "name": "Plataforma",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.account_id }}/media",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "media_type", "value": "REELS" },
+            { "name": "video_url", "value": "={{ $json.video_url }}" },
+            { "name": "caption", "value": "={{ $json.caption }}" },
+            { "name": "access_token", "value": "={{ $json.access_token }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-ig-create",
+      "name": "IG criar container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": { "amount": 45, "unit": "seconds" },
+      "id": "node-wait",
+      "name": "Aguardar IG (45s)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1120, 200],
+      "webhookId": "darkflow-wait"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Checar segredo').item.json.account_id }}/media_publish",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "creation_id", "value": "={{ $json.id }}" },
+            { "name": "access_token", "value": "={{ $('Checar segredo').item.json.access_token }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-ig-publish",
+      "name": "IG publicar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.account_id }}/videos",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "file_url", "value": "={{ $json.video_url }}" },
+            { "name": "description", "value": "={{ $json.caption }}" },
+            { "name": "access_token", "value": "={{ $json.access_token }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-fb",
+      "name": "FB postar video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"id\": ($json.id || $json.video_id || \"ok\") } }}",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Checar segredo", "type": "main", "index": 0 }]] },
+    "Checar segredo": { "main": [[{ "node": "Plataforma", "type": "main", "index": 0 }]] },
+    "Plataforma": {
+      "main": [
+        [{ "node": "IG criar container", "type": "main", "index": 0 }],
+        [{ "node": "FB postar video", "type": "main", "index": 0 }]
+      ]
+    },
+    "IG criar container": { "main": [[{ "node": "Aguardar IG (45s)", "type": "main", "index": 0 }]] },
+    "Aguardar IG (45s)": { "main": [[{ "node": "IG publicar", "type": "main", "index": 0 }]] },
+    "IG publicar": { "main": [[{ "node": "Responder OK", "type": "main", "index": 0 }]] },
+    "FB postar video": { "main": [[{ "node": "Responder OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}
