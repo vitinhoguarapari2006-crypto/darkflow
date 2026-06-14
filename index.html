@@ -481,6 +481,10 @@ input[type=range]{width:100%;accent-color:var(--primary);height:6px}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <div class="page-title" id="pageTitle">Dashboard<small id="pageSub">Visão geral dos seus canais</small></div>
+      <button class="btn btn-icon" id="bellBtn" title="Notificações" style="position:relative;margin-right:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span id="bellDot" style="display:none;position:absolute;top:6px;right:6px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--danger);color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center"></span>
+      </button>
       <div id="topActions"></div>
     </header>
     <main class="content" id="content"></main>
@@ -537,7 +541,7 @@ function platChip(p,sm){const x=PLAT[p]||PLAT.instagram;return `<span class="pch
 /* ---------- STATE / STORAGE ---------- */
 const KEY='darkflow_v1';
 const DEFAULTS={
-  channels:[], media:[], captions:[], schedule:[], jobs:[], templates:[],
+  channels:[], media:[], captions:[], schedule:[], jobs:[], templates:[], activity:[],
   platformApps:{ // credenciais do app de desenvolvedor (por plataforma)
     instagram:{app_id:'',app_secret:''}, facebook:{app_id:'',app_secret:''},
     tiktok:{client_key:'',client_secret:''}, youtube:{client_id:'',client_secret:''}
@@ -585,10 +589,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
 window.closeModal=closeModal;
 
 /* ---------- EARNINGS MODEL ---------- */
-function postEarning(post){ // estimativa: views * rpm/1000
-  const rpm=S.settings.rpm[post.platform]??0.6;
+function postEarning(post){ // estimativa: views * rpm/1000 — só conta se o canal for monetizado
+  const ch=S.channels.find(c=>c.id===post.channelId);
+  if(ch && ch.monetized===false) return 0;
+  const rpm=(ch&&typeof ch.rpm==='number'&&ch.rpm>0)?ch.rpm:(S.settings.rpm[post.platform]??0.6);
   return (post.views||0)*rpm/1000;
 }
+const isMonetized=ch=>ch && ch.monetized!==false; // padrão: monetizado
 function channelStats(chId){
   const posts=S.schedule.filter(p=>p.channelId===chId);
   const published=posts.filter(p=>p.status==='published');
@@ -659,13 +666,14 @@ function renderDashboard(){
     c.innerHTML=onboardingCard();bindOnboard();return;
   }
 
+  const monCount=S.channels.filter(isMonetized).length, nmonCount=S.channels.length-monCount;
   c.innerHTML=`
   <div class="kpi-grid">
     ${kpi('v',I.eye,'Visualizações totais',compact(totalViews),pub.length+' posts publicados')}
-    ${kpi('e',I.money,'Ganhos estimados',money(totalEarn),'modelo RPM editável')}
+    ${kpi('e',I.money,'Ganhos estimados',money(totalEarn),'só canais <b>monetizados</b>')}
     ${kpi('a',I.rocket,'Posts agendados',scheduled,'na fila de publicação')}
-    ${kpi('r',I.layers,'Canais ativos',S.channels.length,S.media.length+' vídeos na biblioteca')}
-  </div>
+    ${kpi('r',I.layers,'Canais ativos',S.channels.length,monCount+' monetizados · '+nmonCount+' não')}
+  </div>`+`
 
   <div class="charts-grid">
     <div class="card card-pad">
@@ -759,22 +767,30 @@ function bindOnboard(){
 /* ============================================================
    CHANNELS
    ============================================================ */
+let chFilter='all';
 function renderChannels(){
   topBtn(`<button class="btn btn-primary" id="addCh">${I.plus} Novo canal</button>`);
   document.getElementById('addCh').addEventListener('click',()=>channelModal());
   const c=document.getElementById('content');
   if(!S.channels.length){c.innerHTML=emptyState(I.layers,'Nenhum canal cadastrado','Cadastre os perfis dark que você gerencia em cada plataforma para acompanhar desempenho e ganhos.','Cadastrar canal',()=>channelModal());return}
-  c.innerHTML=`<div class="card"><div class="table-wrap"><table>
-    <thead><tr><th>Canal</th><th>Plataforma</th><th>Nicho</th><th class="num">Publicados</th><th class="num">Views</th><th class="num">Ganhos est.</th><th></th></tr></thead>
-    <tbody>${S.channels.map(chRow).join('')}</tbody></table></div></div>`;
+  const mon=S.channels.filter(isMonetized),nmon=S.channels.filter(c=>!isMonetized(c));
+  const tabs=[['all','Todos',S.channels.length],['mon','Monetizados',mon.length],['nmon','Não monetizados',nmon.length]];
+  let list=chFilter==='mon'?mon:chFilter==='nmon'?nmon:S.channels;
+  c.innerHTML=`
+  <div class="seg" style="max-width:460px;margin-bottom:16px" id="chTabs">${tabs.map(([k,l,n])=>`<button class="seg-opt ${chFilter===k?'sel':''}" data-cf="${k}"><b>${l}</b>${n} ${n===1?'canal':'canais'}</button>`).join('')}</div>
+  <div class="card"><div class="table-wrap"><table>
+    <thead><tr><th>Canal</th><th>Status</th><th>Nicho</th><th class="num">Publicados</th><th class="num">Views</th><th class="num">Ganhos est.</th><th></th></tr></thead>
+    <tbody>${list.map(chRow).join('')||`<tr><td colspan="7" style="text-align:center;color:var(--muted-2);padding:24px">Nenhum canal nesta categoria</td></tr>`}</tbody></table></div></div>`;
+  c.querySelectorAll('[data-cf]').forEach(b=>b.addEventListener('click',()=>{chFilter=b.dataset.cf;renderChannels()}));
   c.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>channelModal(b.dataset.edit)));
+  c.querySelectorAll('[data-mon]').forEach(b=>b.addEventListener('click',()=>{const ch=S.channels.find(x=>x.id===b.dataset.mon);ch.monetized=!isMonetized(ch);save();renderChannels();toast(isMonetized(ch)?'Marcado como monetizado':'Marcado como não monetizado')}));
   c.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>confirmDel('canal',()=>{S.channels=S.channels.filter(x=>x.id!==b.dataset.del);save();renderChannels();toast('Canal removido')})));
 }
-function chRow(ch){const st=channelStats(ch.id);return `<tr>
+function chRow(ch){const st=channelStats(ch.id);const mon=isMonetized(ch);return `<tr>
   <td><div class="cli">${platChip(ch.platform,true)}<div>${esc(ch.name)}<small>@${esc(ch.handle||'—')}</small></div></div></td>
-  <td>${PLAT[ch.platform]?.label||''}</td>
+  <td><button class="badge ${mon?'b-green':'b-gray'} nodot" data-mon="${ch.id}" title="Clique para alternar" style="border:0;cursor:pointer">${mon?'Monetizado':'Não monet.'}</button></td>
   <td>${ch.niche?`<span class="badge b-gray nodot">${esc(ch.niche)}</span>`:'<span style="color:var(--muted-2)">—</span>'}</td>
-  <td class="num">${st.published}</td><td class="num">${compact(st.views)}</td><td class="num pos">${money(st.earn)}</td>
+  <td class="num">${st.published}</td><td class="num">${compact(st.views)}</td><td class="num ${mon?'pos':''}">${mon?money(st.earn):'<span style="color:var(--muted-2)">—</span>'}</td>
   <td><div class="row-actions"><button class="btn btn-icon" data-edit="${ch.id}" title="Editar">${I.edit}</button><button class="btn btn-icon btn-danger" data-del="${ch.id}" title="Excluir">${I.trash}</button></div></td></tr>`}
 
 function channelModal(id){
@@ -791,12 +807,13 @@ function channelModal(id){
       <div class="field"><label>Nicho</label><input class="input" id="cNiche" value="${esc(ch.niche||'')}" placeholder="Motivação, Curiosidades..."></div>
       <div class="field"><label>RPM (R$/1000 views)</label><input class="input" id="cRpm" type="number" step="0.1" min="0" value="${ch.rpm??S.settings.rpm[ch.platform||'instagram']}" placeholder="0.6"><div class="hint">Receita estimada por mil views deste canal.</div></div>
     </div>
+    <div class="chk" style="margin-bottom:4px"><input type="checkbox" id="cMon" ${ch.monetized!==false?'checked':''}><span class="ct">Canal <b>monetizado</b> (entra no cálculo de ganhos do dashboard)</span></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="cSave">${I.check} Salvar</button></div>`);
   let plat=ch.platform||'instagram';
   document.getElementById('cPlat').addEventListener('click',e=>{const b=e.target.closest('[data-p]');if(!b)return;plat=b.dataset.p;document.querySelectorAll('#cPlat .seg-opt').forEach(o=>o.classList.toggle('sel',o.dataset.p===plat));const rpmEl=document.getElementById('cRpm');if(!rpmEl.value||!id)rpmEl.value=S.settings.rpm[plat]});
   document.getElementById('cSave').addEventListener('click',()=>{
     const name=document.getElementById('cName').value.trim();if(!name)return toast('Dê um nome ao canal','warn');
-    const data={platform:plat,name,handle:document.getElementById('cHandle').value.trim(),niche:document.getElementById('cNiche').value.trim(),rpm:+document.getElementById('cRpm').value||S.settings.rpm[plat]};
+    const data={platform:plat,name,handle:document.getElementById('cHandle').value.trim(),niche:document.getElementById('cNiche').value.trim(),rpm:+document.getElementById('cRpm').value||S.settings.rpm[plat],monetized:document.getElementById('cMon').checked};
     if(id){Object.assign(S.channels.find(c=>c.id===id),data)}else{S.channels.push(Object.assign({id:uid(),createdAt:Date.now()},data))}
     save();closeModal();go('channels');toast(id?'Canal atualizado':'Canal cadastrado');
   });
@@ -853,10 +870,11 @@ function mediaModal(id){
       <div class="field"><label>Status</label><select class="select" id="mStatus">${Object.entries(ST_BADGE).map(([k,v])=>`<option value="${k}" ${m.status===k?'selected':''}>${v[1]}</option>`).join('')}</select></div>
     </div>
     <div class="field"><label>Caminho do arquivo</label><input class="input" id="mPath" value="${esc(m.path||'')}" placeholder="C:\\DarkFlow\\Originais\\video01.mp4"><div class="hint">Opcional — usado pelo script de edição em lote.</div></div>
+    <div class="field"><label>URL pública (para publicar)</label><input class="input" id="mUrl" value="${esc(m.publicUrl||'')}" placeholder="https://...seu-link-publico/video.mp4"><div class="hint">O Instagram/Facebook baixam o vídeo desta URL. Necessário para a publicação automática.</div></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="mSave">${I.check} Salvar</button></div>`);
   document.getElementById('mSave').addEventListener('click',()=>{
     const title=document.getElementById('mTitle').value.trim();if(!title)return toast('Informe o título','warn');
-    const data={title,duration:document.getElementById('mDur').value.trim(),status:document.getElementById('mStatus').value,path:document.getElementById('mPath').value.trim()};
+    const data={title,duration:document.getElementById('mDur').value.trim(),status:document.getElementById('mStatus').value,path:document.getElementById('mPath').value.trim(),publicUrl:document.getElementById('mUrl').value.trim()};
     if(id){Object.assign(S.media.find(x=>x.id===id),data)}else{S.media.push(Object.assign({id:uid(),createdAt:Date.now()},data))}
     save();closeModal();drawLib();updateCounts();toast(id?'Vídeo atualizado':'Vídeo adicionado');
   });
@@ -1390,14 +1408,14 @@ function buildFFmpegScript(vids,o){
       if(transparent){
         // PNG com furo: vídeo encaixado na janela, posto em canvas preto, template (com alpha) por cima
         fc=`[0:v]${sc}${fitFilter(aw,ah,o.fit)},pad=${W}:${H}:${ax}:${ay}:black[v];`
-          +`[v][1:v]overlay=0:0${drawtext?'[ov];[ov]'+drawtext.slice(1):''}`;
+          +`[v][1:v]overlay=0:0${drawtext?'[ov];[ov]'+drawtext.slice(1):''}[outv]`;
       }else{
         // template opaco: arte ao fundo (tela cheia) + vídeo encaixado na janela
         fc=`[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];`
           +`[0:v]${sc}${fitFilter(aw,ah,o.fit)}[fg];`
-          +`[bg][fg]overlay=${ax}:${ay}${drawtext?'[ov];[ov]'+drawtext.slice(1):''}`;
+          +`[bg][fg]overlay=${ax}:${ay}${drawtext?'[ov];[ov]'+drawtext.slice(1):''}[outv]`;
       }
-      lines.push(`& $ff -y -i "${src}" -i $tpl -filter_complex "${fc}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
+      lines.push(`& $ff -y -i "${src}" -i $tpl -filter_complex "${fc}" -map "[outv]" -map "0:a?" -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k "$out\\${outName}"`);
     }else{
       // sem template: padroniza formato (com auto-recorte opcional da moldura)
       lines.push(`& $ff -y -i "${src}" -vf "${sc}${fitFilter(W,H,o.fit)}${drawtext}" -c:a aac -b:a 128k -c:v libx264 -preset veryfast -crf 20 "$out\\${outName}"`);
@@ -1435,17 +1453,21 @@ async function getFFmpeg(){
 async function getFont(){if(_font!==null)return _font;try{_font=await window.FFmpegUtil.fetchFile('https://cdn.jsdelivr.net/gh/ffmpegwasm/testdata@master/arial.ttf')}catch(e){_font=false}return _font}
 // recorte da origem (fração 0-1) como prefixo de filtro, ex.: crop=iw*0.8:ih*0.5:iw*0.1:ih*0.4,
 function srcCropPrefix(c){if(!c)return '';const f=n=>(+n).toFixed(4);return `crop=iw*${f(c.w)}:ih*${f(c.h)}:iw*${f(c.x)}:ih*${f(c.y)},`}
-// filtro para o wasm (numérico, sem variáveis de PowerShell)
+// filtro de composição (numérico). Sempre termina com [outv] para mapear corretamente.
 function wasmFilter(W,H,tpl,fit,cap,srcCrop){
-  let dt='';const sp=srcCropPrefix(srcCrop);
-  if(cap)dt=`,drawtext=fontfile=arial.ttf:text='${cap}':fontcolor=white:fontsize=46:borderw=4:bordercolor=black@0.9:x=(w-text_w)/2:y=${H-220}`;
+  const sp=srcCropPrefix(srcCrop);
+  const dt=cap?`drawtext=fontfile=arial.ttf:text='${cap}':fontcolor=white:fontsize=46:borderw=4:bordercolor=black@0.9:x=(w-text_w)/2:y=${H-220}`:'';
+  let body;
   if(tpl){
     const a=tplArea(tpl);let aw=evenN(a.w*W),ah=evenN(a.h*H),ax=evenN(a.x*W),ay=evenN(a.y*H);
     aw=Math.max(2,Math.min(W,aw));ah=Math.max(2,Math.min(H,ah));ax=Math.max(0,Math.min(W-aw,ax));ay=Math.max(0,Math.min(H-ah,ay));
-    if(tpl.transparent)return `[0:v]${sp}${fitFilter(aw,ah,fit)},pad=${W}:${H}:${ax}:${ay}:black[v];[v][1:v]overlay=0:0${dt?'[ov];[ov]'+dt.slice(1):''}`;
-    return `[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];[0:v]${sp}${fitFilter(aw,ah,fit)}[fg];[bg][fg]overlay=${ax}:${ay}${dt?'[ov];[ov]'+dt.slice(1):''}`;
+    if(tpl.transparent) body=`[0:v]${sp}${fitFilter(aw,ah,fit)},pad=${W}:${H}:${ax}:${ay}:black[v];[v][1:v]overlay=0:0`;
+    else body=`[1:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}[bg];[0:v]${sp}${fitFilter(aw,ah,fit)}[fg];[bg][fg]overlay=${ax}:${ay}`;
+  } else {
+    body=`[0:v]${sp}${fitFilter(W,H,fit)}`;
   }
-  return `[0:v]${sp}${fitFilter(W,H,fit)}${dt}`;
+  if(dt) body+=`[vt];[vt]${dt}`;
+  return body+'[outv]';
 }
 // localiza os arquivos reais dos vídeos selecionados (pasta conectada ou seleção manual)
 async function resolveVideoFiles(vids){
@@ -1498,7 +1520,7 @@ function autoEditorPS(o){
   L.push('  if(Test-Path $dest){return}');
   L.push('  Start-Sleep -Seconds 1');
   L.push('  Write-Host ("Editando: "+[IO.Path]::GetFileName($f)) -ForegroundColor Green');
-  L.push('  & $ff -y -i $f -i $tpl -filter_complex $filter -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k $dest');
+  L.push('  & $ff -y -i $f -i $tpl -filter_complex $filter -map "[outv]" -map "0:a?" -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k $dest');
   L.push('  if(Test-Path $dest){ Write-Host ("  -> pronto: "+$name) -ForegroundColor Cyan }');
   L.push('}');
   L.push('Write-Host "DarkFlow vigiando $in  (deixe esta janela aberta)" -ForegroundColor Yellow');
@@ -1582,9 +1604,9 @@ function fastEditorPS(o){
   L.push('if($d2.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK){exit}; $out=$d2.SelectedPath');
   L.push('# --- usa a placa de video se disponivel (rapido) ---');
   L.push('$encList = & $ff -hide_banner -encoders 2>&1 | Out-String');
-  L.push('if($encList -match "h264_nvenc"){ $venc=@("-c:v","h264_nvenc","-preset","p4","-cq","23") }');
+  L.push('if($encList -match "h264_nvenc"){ $venc=@("-c:v","h264_nvenc","-preset","p4","-rc","vbr","-cq","23","-b:v","0") }');
   L.push('elseif($encList -match "h264_qsv"){ $venc=@("-c:v","h264_qsv","-global_quality","23") }');
-  L.push('elseif($encList -match "h264_amf"){ $venc=@("-c:v","h264_amf","-quality","balanced","-rc","cqp","-qp_i","23","-qp_p","23") }');
+  L.push('elseif($encList -match "h264_amf"){ $venc=@("-c:v","h264_amf","-rc","cqp","-qp_i","23","-qp_p","23") }');
   L.push('else{ $venc=@("-c:v","libx264","-preset","veryfast","-crf","20") }');
   L.push('$vids=Get-ChildItem -LiteralPath $in -File | Where-Object { $_.Extension -match "\\.(mp4|mov|webm|mkv|m4v|avi)$" }');
   L.push('$total=$vids.Count; if($total -eq 0){ [System.Windows.Forms.MessageBox]::Show("Nenhum video encontrado nessa pasta.","DarkFlow")|Out-Null; exit }');
@@ -1593,8 +1615,12 @@ function fastEditorPS(o){
   L.push('foreach($v in $vids){');
   L.push('  $i++; $dest=Join-Path $out ($v.BaseName+"_edit.mp4")');
   L.push('  Write-Host ("[$i/$total] "+$v.Name) -ForegroundColor Green');
-  L.push('  & $ff -y -i $v.FullName -i $tpl -filter_complex $filter @venc -pix_fmt yuv420p -c:a aac -b:a 128k $dest 2>> $log');
-  L.push('  if(Test-Path $dest){ $ok++ } else { Write-Host "   (falhou - ver log)" -ForegroundColor Red }');
+  L.push('  & $ff -y -i $v.FullName -i $tpl -filter_complex $filter -map "[outv]" -map "0:a?" @venc -pix_fmt yuv420p -c:a aac -b:a 128k $dest 2>> $log');
+  L.push('  if((-not (Test-Path $dest)) -or ((Get-Item $dest -ErrorAction SilentlyContinue).Length -lt 2048)){');
+  L.push('    Write-Host "   GPU falhou, usando CPU..." -ForegroundColor Yellow; Remove-Item $dest -ErrorAction SilentlyContinue');
+  L.push('    & $ff -y -i $v.FullName -i $tpl -filter_complex $filter -map "[outv]" -map "0:a?" -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k $dest 2>> $log');
+  L.push('  }');
+  L.push('  if((Test-Path $dest) -and ((Get-Item $dest -ErrorAction SilentlyContinue).Length -gt 2048)){ $ok++ } else { Write-Host "   (falhou - ver log)" -ForegroundColor Red }');
   L.push('}');
   L.push('try{ Start-Process $out }catch{}');
   L.push('$msg="Pronto! "+$ok+" de "+$total+" videos editados em:`n"+$out');
@@ -1691,8 +1717,8 @@ async function editNowFlow(opt){
     try{
       await ff.writeFile('in.mp4',await fetchFile(files[m.id]));
       let args=['-i','in.mp4'];if(tplBlob)args.push('-i','tpl.png');
-      if(tplBlob)args.push('-filter_complex',filter);else args.push('-vf',filter);
-      args.push('-c:v','libx264','-preset','ultrafast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','out.mp4');
+      args.push('-filter_complex',filter,'-map','[outv]','-map','0:a?');
+      args.push('-c:v','libx264','-preset','ultrafast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-shortest','out.mp4');
       await ff.exec(args);
       const data=await ff.readFile('out.mp4');const blob=new Blob([data.buffer],{type:'video/mp4'});
       const outName=(m.title||'video').replace(/\.[^.]+$/,'')+'_edit.mp4';
@@ -1768,13 +1794,15 @@ function captionModal(id){
    ============================================================ */
 let calMonth=new Date();calMonth.setDate(1);
 function renderScheduler(){
-  topBtn(`<button class="btn" id="autoFill">${I.bolt} Gerar fila automática</button> <button class="btn btn-primary" id="addPost" style="margin-left:8px">${I.plus} Agendar post</button>`);
+  topBtn(`<button class="btn" id="publishDueBtn">${I.rocket} Publicar pendentes</button> <button class="btn" id="bulkCap" style="margin-left:8px">${I.caption} Legenda em massa</button> <button class="btn" id="autoFill" style="margin-left:8px">${I.bolt} Fila automática</button> <button class="btn btn-primary" id="addPost" style="margin-left:8px">${I.plus} Agendar</button>`);
   document.getElementById('addPost').addEventListener('click',()=>postModal());
   document.getElementById('autoFill').addEventListener('click',autoFillModal);
+  document.getElementById('bulkCap').addEventListener('click',bulkCaptionModal);
+  document.getElementById('publishDueBtn').addEventListener('click',publishDue);
   const c=document.getElementById('content');
   if(!S.channels.length){c.innerHTML=emptyState(I.cal,'Cadastre um canal primeiro','Você precisa de pelo menos um canal para agendar postagens.','Ir para Canais',()=>go('channels'));return}
   c.innerHTML=`
-  <div class="notice warn">${I.warn}<div><b>Postagem real automática</b> precisa das APIs oficiais de cada plataforma (com app aprovado). Veja o passo a passo em <a id="apiLink">Configurações → Publicação</a>. Aqui você monta e controla todo o calendário; quando suas credenciais estiverem ativas, o sistema dispara as publicações.</div></div>
+  <div class="notice info">${I.info}<div>Monte o calendário aqui. Para publicar de verdade no Instagram/Facebook, use <b>Publicar agora</b> em cada post (ou <b>Publicar pendentes</b>). <a id="apiLink">Como ativar a publicação real →</a></div></div>
   <div class="sec-head">
     <button class="btn btn-icon" id="prevM">‹</button>
     <div class="grow" style="text-align:center;font-weight:700;font-size:16px" id="calLabel"></div>
@@ -1784,7 +1812,7 @@ function renderScheduler(){
   <div class="card card-pad" style="margin-bottom:18px"><div id="calGrid"></div></div>
   <div class="block-title">${I.clock} Próximas na fila</div>
   <div id="queue"></div>`;
-  document.getElementById('apiLink').addEventListener('click',()=>{go('settings');setTimeout(()=>document.getElementById('apiSection')?.scrollIntoView({behavior:'smooth'}),200)});
+  document.getElementById('apiLink').addEventListener('click',howToPublishModal);
   document.getElementById('prevM').addEventListener('click',()=>{calMonth.setMonth(calMonth.getMonth()-1);drawCal()});
   document.getElementById('nextM').addEventListener('click',()=>{calMonth.setMonth(calMonth.getMonth()+1);drawCal()});
   document.getElementById('todayBtn').addEventListener('click',()=>{calMonth=new Date();calMonth.setDate(1);drawCal()});
@@ -1812,17 +1840,20 @@ function drawCal(){
 }
 function drawQueue(){
   const q=document.getElementById('queue');
-  const list=S.schedule.filter(p=>p.status==='scheduled').sort((a,b)=>a.when-b.when).slice(0,12);
+  const list=S.schedule.filter(p=>p.status==='scheduled'||p.status==='failed'||p.status==='publishing').sort((a,b)=>a.when-b.when).slice(0,20);
   if(!list.length){q.innerHTML=`<div class="card">${emptyHtml(I.clock,'Fila vazia','Agende posts ou use a fila automática.')}</div>`;return}
   q.innerHTML=list.map(p=>{const ch=S.channels.find(c=>c.id===p.channelId)||{};const m=S.media.find(x=>x.id===p.mediaId)||{};
-    return `<div class="slot"><div class="stime">${fmtTime(p.when)}</div>
-      <div class="sinfo"><div class="sname">${esc(m.title||'Vídeo')}</div><div class="smeta">${fmtDate(p.when)} · ${esc(ch.name||'')}</div></div>
+    const stb=p.status==='failed'?'<span class="badge b-red nodot" style="font-size:11px">falhou</span>':p.status==='publishing'?'<span class="badge b-amber nodot" style="font-size:11px">publicando…</span>':'';
+    return `<div class="slot" style="${p.status==='failed'?'border-color:rgba(255,92,124,.35)':''}"><div class="stime">${fmtTime(p.when)}</div>
+      <div class="sinfo"><div class="sname">${esc(m.title||'Vídeo')} ${stb}</div><div class="smeta">${fmtDate(p.when)} · ${esc(ch.name||'')}${p.status==='failed'&&p.error?' · <span style="color:var(--danger)">'+esc(p.error)+'</span>':''}</div></div>
       ${platChip(p.platform,true)}
       <div class="row-actions">
-        <button class="btn btn-icon" data-pub="${p.id}" title="Marcar publicado">${I.check}</button>
+        <button class="btn btn-sm btn-primary" data-now="${p.id}" title="Publicar agora via API">${I.rocket}</button>
+        <button class="btn btn-icon" data-pub="${p.id}" title="Marcar publicado manualmente">${I.check}</button>
         <button class="btn btn-icon" data-edp="${p.id}" title="Editar">${I.edit}</button>
         <button class="btn btn-icon btn-danger" data-delp="${p.id}" title="Remover">${I.trash}</button>
       </div></div>`}).join('');
+  q.querySelectorAll('[data-now]').forEach(b=>b.addEventListener('click',()=>{const p=S.schedule.find(x=>x.id===b.dataset.now);if(p)runPublish(p)}));
   q.querySelectorAll('[data-pub]').forEach(b=>b.addEventListener('click',()=>markPublished(b.dataset.pub)));
   q.querySelectorAll('[data-edp]').forEach(b=>b.addEventListener('click',()=>postModal(b.dataset.edp)));
   q.querySelectorAll('[data-delp]').forEach(b=>b.addEventListener('click',()=>{S.schedule=S.schedule.filter(x=>x.id!==b.dataset.delp);save();drawCal();updateCounts();toast('Post removido')}));
@@ -1859,6 +1890,32 @@ function postModal(id,presetDate){
     if(id){Object.assign(S.schedule.find(x=>x.id===id),data)}else{S.schedule.push(Object.assign({id:uid(),status:'scheduled',views:0},data))}
     const m=S.media.find(x=>x.id===data.mediaId);if(m&&m.status!=='published')m.status='scheduled';
     save();closeModal();drawCal();updateCounts();toast(id?'Post atualizado':'Post agendado');
+  });
+}
+function bulkCaptionModal(){
+  if(!S.captions.length){toast('Crie uma legenda primeiro na aba Legendas','warn');return}
+  const scheduled=S.schedule.filter(p=>p.status==='scheduled');
+  if(!scheduled.length){toast('Não há posts agendados para aplicar','warn');return}
+  openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
+    <h3>${I.caption} Legenda em massa</h3><div class="sub">Aplica a mesma legenda a centenas de posts agendados de uma vez.</div>
+    <div class="field"><label>Legenda <span class="req">*</span></label><select class="select" id="bcCap">${S.captions.map(c=>`<option value="${c.id}">${esc(c.name)}${c.default?' (padrão)':''}</option>`).join('')}</select></div>
+    <div class="field"><label>Aplicar em</label><select class="select" id="bcScope">
+      <option value="all">Todos os posts agendados (${scheduled.length})</option>
+      ${Object.keys(PLAT).map(p=>{const n=scheduled.filter(x=>x.platform===p).length;return n?`<option value="${p}">${PLAT[p].label} (${n})</option>`:''}).join('')}
+    </select></div>
+    <div class="chk" style="margin-bottom:4px"><input type="checkbox" id="bcOnlyEmpty"><span class="ct">Só onde ainda não tem legenda</span></div>
+    <div class="notice info" style="margin:14px 0 0">${I.info}<div>Use <b>spintax</b> <code style="color:var(--primary)">{a|b}</code> na legenda — cada post recebe uma variação na hora de publicar, evitando conteúdo duplicado.</div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="bcGo">${I.check} Aplicar</button></div>`);
+  document.getElementById('bcGo').addEventListener('click',()=>{
+    const capId=document.getElementById('bcCap').value, scope=document.getElementById('bcScope').value, onlyEmpty=document.getElementById('bcOnlyEmpty').checked;
+    let n=0;
+    S.schedule.forEach(p=>{
+      if(p.status!=='scheduled')return;
+      if(scope!=='all'&&p.platform!==scope)return;
+      if(onlyEmpty&&p.captionId)return;
+      p.captionId=capId;n++;
+    });
+    save();closeModal();drawCal();toast(n+' posts atualizados com a legenda');
   });
 }
 function autoFillModal(){
@@ -2007,7 +2064,7 @@ function loadDemo(){
     {id:'c1',platform:'instagram',name:'Cortes Motivação',handle:'cortesmotivacao',niche:'Motivação',rpm:0.6,createdAt:now},
     {id:'c2',platform:'tiktok',name:'Curiosidades Diárias',handle:'curiosidadesdiarias',niche:'Curiosidades',rpm:0.4,createdAt:now},
     {id:'c3',platform:'youtube',name:'Histórias Sombrias',handle:'historiassombrias',niche:'Storytelling',rpm:3.5,createdAt:now},
-    {id:'c4',platform:'facebook',name:'Frases de Impacto',handle:'frasesdeimpacto',niche:'Frases',rpm:1.2,createdAt:now},
+    {id:'c4',platform:'facebook',name:'Frases de Impacto',handle:'frasesdeimpacto',niche:'Frases',rpm:1.2,monetized:false,createdAt:now},
   ];
   S.media=[...Array(10)].map((_,i)=>({id:'m'+i,title:'video_'+String(i+1).padStart(2,'0')+'.mp4',duration:'0:'+(20+i*3),status:['published','published','published','scheduled','edited','raw','published','scheduled','edited','raw'][i],createdAt:now}));
   S.captions=[
@@ -2043,7 +2100,7 @@ function hasData(){return S.channels.length||S.media.length||S.captions.length||
 function scheduleCloudPush(){if(!cloud.connected)return;clearTimeout(cloud.pushTimer);cloud.pushTimer=setTimeout(()=>cloudPush(),700)}
 // templates (miniaturas/arquivos) ficam locais no IndexedDB de cada dispositivo — não vão para a nuvem
 function syncPayload(){return {channels:S.channels,media:S.media,captions:S.captions,schedule:S.schedule,jobs:S.jobs,platformApps:S.platformApps,credentials:S.credentials,settings:S.settings,onboarded:S.onboarded}}
-function adoptRemote(d){const localTpls=S.templates;S=deepMerge(structuredClone(DEFAULTS),d);S.templates=localTpls;saveLocalOnly()}
+function adoptRemote(d){const localTpls=S.templates,localAct=S.activity;S=deepMerge(structuredClone(DEFAULTS),d);S.templates=localTpls;S.activity=localAct||[];saveLocalOnly()}
 function updateSyncUI(){
   const dot=document.getElementById('syncDot'),txt=document.getElementById('syncTxt');
   if(dot)dot.className='dot'+(cloud.connected?'':' warn');
@@ -2215,10 +2272,97 @@ function renderCredentials(){
   }));
 }
 
+/* ============================================================
+   NOTIFICAÇÕES / CENTRAL DE ATIVIDADE
+   ============================================================ */
+let bellUnread=0;
+function notify(text,type='info'){
+  S.activity.unshift({id:uid(),ts:Date.now(),type,text});
+  if(S.activity.length>120)S.activity.length=120;
+  saveLocalOnly();bellUnread++;updateBell();
+  toast(text,type==='ok'?'ok':type==='err'?'err':type==='warn'?'warn':'ok');
+}
+function updateBell(){const d=document.getElementById('bellDot');if(!d)return;if(bellUnread>0){d.style.display='block';d.textContent=bellUnread>9?'9+':bellUnread}else{d.style.display='none'}}
+function openNotifications(){
+  bellUnread=0;updateBell();
+  const items=(S.activity||[]).slice(0,60);
+  openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
+    <h3>Notificações</h3><div class="sub">Edições, agendamentos e publicações.</div>
+    ${items.length?`<div style="display:flex;flex-direction:column;gap:8px;max-height:58vh;overflow:auto">${items.map(a=>`<div class="slot" style="margin:0;gap:10px"><span class="badge ${a.type==='ok'?'b-green':a.type==='err'?'b-red':a.type==='warn'?'b-amber':'b-blue'} nodot" style="flex:none">${a.type==='ok'?'✓':a.type==='err'?'✕':a.type==='warn'?'!':'i'}</span><div class="sinfo"><div class="sname" style="white-space:normal">${esc(a.text)}</div><div class="smeta">${new Date(a.ts).toLocaleString('pt-BR')}</div></div></div>`).join('')}</div>
+      <div class="modal-foot"><button class="btn btn-ghost" id="clrAct">Limpar tudo</button><button class="btn btn-primary" onclick="closeModal()">Fechar</button></div>`
+    :`<div class="empty" style="padding:30px"><div class="ie">${I.info}</div><p>Nenhuma notificação ainda. Edições e publicações aparecem aqui.</p></div>`}`);
+  const cl=document.getElementById('clrAct');if(cl)cl.onclick=()=>{S.activity=[];saveLocalOnly();closeModal();toast('Notificações limpas')};
+}
+
+/* ============================================================
+   MOTOR DE PUBLICAÇÃO (Graph API — Instagram/Facebook)
+   IG usa fluxo de CONTAINER: cria mídia -> aguarda -> publica.
+   ============================================================ */
+const GRAPH='https://graph.facebook.com/v21.0';
+const sleepMs=ms=>new Promise(r=>setTimeout(r,ms));
+async function publishPost(post){
+  const ch=S.channels.find(c=>c.id===post.channelId);if(!ch)throw new Error('canal não encontrado');
+  const cr=(S.credentials||{})[post.channelId]||{};
+  const media=S.media.find(m=>m.id===post.mediaId);
+  const capObj=S.captions.find(c=>c.id===post.captionId);
+  const caption=capObj?spin(capObj.text||''):'';
+  const url=media&&media.publicUrl;
+  if(!cr.access_token)throw new Error('sem Access token (aba Credenciais deste canal)');
+  if(!url)throw new Error('vídeo sem URL pública — envie o vídeo para um link público e cole em "URL pública" no vídeo');
+  if(ch.platform==='instagram'){
+    if(!cr.account_id)throw new Error('sem ID da conta do Instagram');
+    const c1=await fetch(`${GRAPH}/${cr.account_id}/media`,{method:'POST',body:new URLSearchParams({media_type:'REELS',video_url:url,caption,access_token:cr.access_token})}).then(r=>r.json());
+    if(c1.error)throw new Error(c1.error.message);
+    for(let i=0;i<30;i++){await sleepMs(3000);const st=await fetch(`${GRAPH}/${c1.id}?fields=status_code&access_token=${encodeURIComponent(cr.access_token)}`).then(r=>r.json());if(st.status_code==='FINISHED')break;if(st.status_code==='ERROR')throw new Error('Instagram não processou o vídeo (formato/URL)');}
+    const c2=await fetch(`${GRAPH}/${cr.account_id}/media_publish`,{method:'POST',body:new URLSearchParams({creation_id:c1.id,access_token:cr.access_token})}).then(r=>r.json());
+    if(c2.error)throw new Error(c2.error.message);
+    return c2.id;
+  }
+  if(ch.platform==='facebook'){
+    if(!cr.account_id)throw new Error('sem ID da página do Facebook');
+    const r=await fetch(`${GRAPH}/${cr.account_id}/videos`,{method:'POST',body:new URLSearchParams({file_url:url,description:caption,access_token:cr.access_token})}).then(r=>r.json());
+    if(r.error)throw new Error(r.error.message);
+    return r.id||r.video_id||'ok';
+  }
+  throw new Error('publicação automática hoje só Instagram/Facebook (TikTok/YouTube em breve)');
+}
+async function runPublish(post){
+  const ch=S.channels.find(c=>c.id===post.channelId)||{};
+  post.status='publishing';saveLocalOnly();if(current==='scheduler')drawCal();
+  notify('Publicando em '+(ch.name||'canal')+'…','info');
+  try{
+    const id=await publishPost(post);
+    post.status='published';post.publishedId=id;post.publishedAt=Date.now();
+    const m=S.media.find(x=>x.id===post.mediaId);if(m)m.status='published';
+    notify('✅ Publicado em '+(ch.name||'canal'),'ok');
+  }catch(e){post.status='failed';post.error=String(e&&e.message||e);notify('❌ Falha em '+(ch.name||'canal')+': '+post.error,'err');}
+  save();if(current==='scheduler')drawCal();
+}
+async function publishDue(){
+  const due=S.schedule.filter(p=>p.status==='scheduled'&&p.when<=Date.now()).sort((a,b)=>a.when-b.when);
+  if(!due.length){toast('Nenhum post no horário ainda','warn');return}
+  notify(due.length+' post(s) no horário — publicando…','info');
+  for(const p of due){await runPublish(p)}
+  toast('Publicação concluída — veja as notificações');
+}
+function howToPublishModal(){
+  openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
+    <h3>${I.rocket} Como ativar a publicação real</h3><div class="sub">O que seu app precisa para postar de verdade no Instagram/Facebook.</div>
+    <ol style="font-size:13.5px;color:var(--text);line-height:1.85;padding-left:20px">
+      <li><b>App Meta + tokens:</b> crie o app no developers.facebook.com (guia na aba <b>Credenciais</b>) e cole em cada canal o <b>Access token</b> e o <b>ID da conta/página</b>.</li>
+      <li><b>Vídeo num link público:</b> o Instagram baixa o vídeo de uma <b>URL pública</b> (ele não aceita arquivo do seu PC). Suba o vídeo editado para um link público e cole em <b>URL pública</b> no vídeo (na Biblioteca).</li>
+      <li><b>Publicar:</b> no Agendamento, use <b>Publicar agora</b> (ou <b>Publicar pendentes</b>). O Instagram usa <b>container</b>: o sistema cria a mídia, espera processar e publica — tudo automático, com notificação do resultado.</li>
+    </ol>
+    <div class="notice warn" style="margin:6px 0 0">${I.warn}<div><b>Importante sobre "automático 24h":</b> um site sozinho só publica enquanto está <b>aberto</b>. Para postar sozinho com o PC/navegador fechado, é preciso um <b>servidor/worker</b> rodando a agenda na nuvem (posso montar isso depois — ex.: função agendada que lê sua fila e chama a Graph API).</div></div>
+    <div class="modal-foot"><button class="btn" id="goCred2">Abrir Credenciais</button><button class="btn btn-primary" onclick="closeModal()">Entendi</button></div>`);
+  document.getElementById('goCred2').addEventListener('click',()=>{closeModal();go('credentials')});
+}
+
 /* ---------- BOOT ---------- */
 updateCounts();
 (function bootCloud(){const cfg=loadCloudCfg();if(cfg&&cfg.code){cloudConnect(cfg,{silent:true})}})();
 document.getElementById('syncPill').addEventListener('click',openCloudModal);
+document.getElementById('bellBtn').addEventListener('click',openNotifications);
 go('dashboard');
 window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg,srcCropPrefix,autoEditorPS,buildFFmpegScript,fastEditorPS,toEncodedCommand,psToBat}};
 })();
