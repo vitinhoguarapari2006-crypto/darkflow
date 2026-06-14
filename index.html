@@ -550,7 +550,8 @@ const DEFAULTS={
   settings:{
     rpm:{instagram:0.6, facebook:1.2, tiktok:0.4, youtube:3.5}, // R$ por 1000 views (estimativa editável)
     currency:'R$',
-    template:'', templateId:'', outDir:'C:\\DarkFlow\\Editados', srcDir:'C:\\DarkFlow\\Originais', templateDir:'C:\\DarkFlow\\Templates'
+    template:'', templateId:'', outDir:'C:\\DarkFlow\\Editados', srcDir:'C:\\DarkFlow\\Originais', templateDir:'C:\\DarkFlow\\Templates',
+    autoPublish:false
   },
   onboarded:false
 };
@@ -1722,7 +1723,7 @@ async function editNowFlow(opt){
       await ff.exec(args);
       const data=await ff.readFile('out.mp4');const blob=new Blob([data.buffer],{type:'video/mp4'});
       const outName=(m.title||'video').replace(/\.[^.]+$/,'')+'_edit.mp4';
-      results.push({name:outName,blob});
+      results.push({name:outName,blob,mediaId:m.id});
       if(resultGrid){const url=URL.createObjectURL(blob);const card=document.createElement('div');card.className='res-card';card.innerHTML=`<video src="${url}" controls preload="metadata" playsinline></video><div class="rn" title="${esc(outName)}">${esc(outName)}</div>`;resultGrid.appendChild(card)}
       if(m.status==='raw'||m.status==='edited')m.status='edited';
       try{await ff.deleteFile('in.mp4')}catch(e){}try{await ff.deleteFile('out.mp4')}catch(e){}
@@ -1730,10 +1731,30 @@ async function editNowFlow(opt){
   }
   save();updateCounts();
   const ok=results.filter(r=>!r.error);
-  setMsg(`<div class="notice info" style="margin:0">${I.check}<div><b>${ok.length} de ${ready.length} vídeo(s) editados!</b> Veja em “Conferir resultado” abaixo.<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn btn-sm btn-primary" id="dlAll">${I.download} Baixar todos</button><button class="btn btn-sm" id="saveAll">${I.folder} Salvar na pasta</button></div></div></div>`);
+  setMsg(`<div class="notice info" style="margin:0">${I.check}<div><b>${ok.length} de ${ready.length} vídeo(s) editados!</b> Veja em “Conferir resultado” abaixo.<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn btn-sm btn-primary" id="dlAll">${I.download} Baixar todos</button><button class="btn btn-sm" id="saveAll">${I.folder} Salvar na pasta</button><button class="btn btn-sm" id="upAll">${I.upload} Subir p/ nuvem (publicar)</button></div></div></div>`);
   document.getElementById('dlAll').onclick=()=>ok.forEach(r=>{const a=document.createElement('a');a.href=URL.createObjectURL(r.blob);a.download=r.name;a.click()});
   document.getElementById('saveAll').onclick=()=>saveResultsToFolder(ok);
+  document.getElementById('upAll').onclick=()=>uploadResultsToCloud(ok);
   document.getElementById('resultGrid')?.scrollIntoView({behavior:'smooth'});
+}
+// sobe os editados para o Storage público e preenche a URL pública de cada vídeo (pronto p/ publicar)
+async function uploadResultsToCloud(results){
+  const box=document.getElementById('renderBox');
+  let done=0;const total=results.length;
+  for(const r of results){
+    if(box)box.innerHTML=`<div class="hint">Enviando para a nuvem ${done+1}/${total}…</div><div class="prog"><i style="width:${Math.round(done/total*100)}%"></i></div>`;
+    try{
+      const url=await uploadToCloud(r.blob,r.name);
+      const m=S.media.find(x=>x.id===r.mediaId);if(m){m.publicUrl=url}
+      done++;
+    }catch(e){
+      if(String(e.message)==='BUCKET'){if(box)box.innerHTML=`<div class="notice warn" style="margin:0">${I.warn}<div>O storage ainda não está configurado. Veja <b>supabase/README</b> (1 vez) para criar o bucket público <b>darkflow</b>.</div></div>`;return}
+      notify('Falha ao subir '+r.name+': '+(e.message||e),'err');
+    }
+  }
+  save();
+  if(box)box.innerHTML=`<div class="notice info" style="margin:0">${I.check}<div><b>${done} vídeo(s) na nuvem!</b> URL pública preenchida — já dá pra publicar no Agendamento.</div></div>`;
+  notify(done+' vídeos enviados para a nuvem (prontos p/ publicar)','ok');
 }
 
 /* ============================================================
@@ -2006,7 +2027,14 @@ function renderSettings(){
         <tr><td>${platChip('tiktok',true)}</td><td>Content Posting API</td><td>App TikTok for Developers aprovado</td></tr>
         <tr><td>${platChip('youtube',true)}</td><td>YouTube Data API v3</td><td>Projeto Google Cloud + OAuth</td></tr>
       </tbody></table></div>
-    <p class="hint" style="margin-top:14px">Quando você tiver as credenciais, elas entram em <b>darkflow-config</b> (ver README). Enquanto isso, a agenda funciona como painel de controle e você publica manualmente marcando como "publicado".</p>
+    <p class="hint" style="margin-top:14px">Quando você tiver as credenciais, elas entram na aba <b>Credenciais</b>. Enquanto isso, a agenda funciona como painel de controle e você publica manualmente.</p>
+  </div>
+
+  <div class="card card-pad" style="margin-bottom:18px">
+    <div class="block-title" style="margin-top:0">${I.rocket} Publicação automática</div>
+    <label class="chk" style="margin-bottom:12px"><input type="checkbox" id="optAutoPub" ${S.settings.autoPublish?'checked':''}><span class="ct"><b>Auto-publicar com o app aberto</b> — a cada minuto, publica os posts que chegaram no horário (precisa de credenciais + URL pública nos vídeos).</span></label>
+    <div class="notice info" style="margin:0 0 12px">${I.info}<div>Para postar <b>24h com o PC desligado</b>, instale o <b>worker na nuvem</b> (roda no Supabase a cada 5 min). Passo a passo na pasta <b>supabase/</b> do projeto.</div></div>
+    <button class="btn btn-sm" id="howPub">${I.info} Como ativar a publicação real</button>
   </div>
 
   <div class="card card-pad" style="margin-bottom:18px">
@@ -2023,6 +2051,8 @@ function renderSettings(){
 
   <div style="text-align:center;color:var(--muted-2);font-size:12.5px;padding:8px">DarkFlow · Central de canais · v1.0 — seus dados ficam no seu dispositivo.</div>`;
 
+  document.getElementById('optAutoPub').addEventListener('change',e=>{S.settings.autoPublish=e.target.checked;save();startAutoPublish();toast(e.target.checked?'Auto-publicação ligada (app aberto)':'Auto-publicação desligada')});
+  document.getElementById('howPub').addEventListener('click',howToPublishModal);
   document.getElementById('cloudBtn').addEventListener('click',openCloudModal);
   document.getElementById('cloudSyncNow')?.addEventListener('click',async()=>{await cloudPush(true);await cloudPull();toast('Sincronizado ✦')});
   document.getElementById('cloudOff')?.addEventListener('click',()=>{cloudDisconnect();renderSettings()});
@@ -2345,6 +2375,26 @@ async function publishDue(){
   for(const p of due){await runPublish(p)}
   toast('Publicação concluída — veja as notificações');
 }
+/* ----- Auto-publicação (enquanto o app estiver aberto) ----- */
+let autoTimer=null,autoBusy=false;
+function startAutoPublish(){stopAutoPublish();if(!S.settings.autoPublish)return;autoTimer=setInterval(autoTick,60000);autoTick()}
+function stopAutoPublish(){if(autoTimer)clearInterval(autoTimer);autoTimer=null}
+async function autoTick(){
+  if(autoBusy||!S.settings.autoPublish)return;
+  const due=S.schedule.filter(p=>p.status==='scheduled'&&p.when<=Date.now()).sort((a,b)=>a.when-b.when);
+  if(!due.length)return;
+  autoBusy=true;
+  for(const p of due){if(!S.settings.autoPublish)break;await runPublish(p)}
+  autoBusy=false;
+}
+/* ----- Upload do vídeo para o Storage público (Supabase) ----- */
+async function uploadToCloud(blob,filename){
+  const cfg=loadCloudCfg()||DEFAULT_CLOUD;const key=cfg.key||DEFAULT_CLOUD.key;const base=cfg.url||DEFAULT_CLOUD.url;
+  const path=Date.now()+'_'+(filename||'video.mp4').replace(/[^\w.\-]/g,'_');
+  const res=await fetch(`${base}/storage/v1/object/darkflow/${path}`,{method:'POST',headers:{'Authorization':'Bearer '+key,'apikey':key,'x-upsert':'true','Content-Type':blob.type||'video/mp4'},body:blob});
+  if(!res.ok){const t=await res.text().catch(()=>'');if(res.status===404||/bucket/i.test(t))throw new Error('BUCKET');throw new Error('upload '+res.status+' '+t.slice(0,100))}
+  return `${base}/storage/v1/object/public/darkflow/${path}`;
+}
 function howToPublishModal(){
   openModal(`<button class="btn btn-icon btn-ghost x-btn" onclick="closeModal()">✕</button>
     <h3>${I.rocket} Como ativar a publicação real</h3><div class="sub">O que seu app precisa para postar de verdade no Instagram/Facebook.</div>
@@ -2363,8 +2413,9 @@ updateCounts();
 (function bootCloud(){const cfg=loadCloudCfg();if(cfg&&cfg.code){cloudConnect(cfg,{silent:true})}})();
 document.getElementById('syncPill').addEventListener('click',openCloudModal);
 document.getElementById('bellBtn').addEventListener('click',openNotifications);
+startAutoPublish();
 go('dashboard');
-window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg,srcCropPrefix,autoEditorPS,buildFFmpegScript,fastEditorPS,toEncodedCommand,psToBat}};
+window.DarkFlow={get S(){return S},loadDemo,go,cloud,_t:{isVideo,winPath,importItems,fmtDur,addTemplateFiles,fileToThumb,aspectLabel,loadAllTplThumbs,wasmFilter,fitFilter,getFFmpeg,srcCropPrefix,autoEditorPS,buildFFmpegScript,fastEditorPS,toEncodedCommand,psToBat,uploadToCloud,publishPost}};
 })();
 </script>
 </body>
